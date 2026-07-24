@@ -1,0 +1,15 @@
+{
+  "entryPoints": [
+    "src/index.ts",
+    "src/domain",
+    "src/infrastructure",
+    "src/presentation",
+    "src/use-cases"
+  ],
+  "entryPointStrategy": "expand",
+  "out": "docs/api",
+  "plugin": ["typedoc-plugin-markdown"],
+  "hideGenerator": true,
+  "excludePrivate": true,
+  "readme": "none"
+}
