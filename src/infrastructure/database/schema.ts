@@ -1,14 +1,22 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const mySchema = appSchema({
-  version: 1,
+  version: 3, // Bump version to 3 for local_name support
   tables: [
+    tableSchema({
+      name: 'vaults',
+      columns: [
+        { name: 'encrypted_data', type: 'string' },
+        { name: 'created_at', type: 'number' },
+      ]
+    }),
     tableSchema({
       name: 'citizens',
       columns: [
         { name: 'npub', type: 'string', isIndexed: true },
         { name: 'role', type: 'string' }, // TOURIST, CITIZEN, etc.
-        { name: 'alias', type: 'string', isOptional: true },
+        { name: 'alias', type: 'string', isOptional: true }, // Público (Ej: Citizen-123)
+        { name: 'local_name', type: 'string', isOptional: true }, // Privado/Local (Ej: "Juan (Panadería)")
         { name: 'merit', type: 'number' },
         { name: 'created_at', type: 'number' },
       ]

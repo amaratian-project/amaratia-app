@@ -34,7 +34,7 @@ export class NostrAdapter implements IRelayClient {
     await relay.publish(event as any);
   }
 
-  subscribe(url: string, filters: any[], onEvent: (event: P2PEvent) => void): () => void {
+  subscribe(url: string, filters: import('nostr-tools').Filter[], onEvent: (event: P2PEvent) => void): () => void {
     const relay = this.relays.get(url);
     if (!relay) throw new Error('Relay not connected');
 

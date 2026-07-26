@@ -5,6 +5,15 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "strictPropertyInitialization": false,
-    "types": ["node", "nativewind/types"]
-  }
+    "types": [
+      "node",
+      "nativewind/types"
+    ]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "app.d.ts",
+    "nativewind-env.d.ts"
+  ]
 }

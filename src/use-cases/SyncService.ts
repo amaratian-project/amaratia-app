@@ -1,5 +1,7 @@
 import { IRelayClient, P2PEvent } from '../domain/network/IRelayClient';
 import { Database } from '@nozbe/watermelondb';
+import { Logger } from '../infrastructure/telemetry/Logger';
+import { TicketData } from '../types';
 
 export class SyncService {
   constructor(
@@ -34,7 +36,7 @@ export class SyncService {
           });
         });
       } catch (e) {
-        console.error('Error syncing ticket from P2P network', e);
+        Logger.error('Error syncing ticket from P2P network', e);
       }
     });
   }

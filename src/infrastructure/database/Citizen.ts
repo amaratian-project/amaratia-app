@@ -1,4 +1,4 @@
-import { Model } from '@nozbe/watermelondb';
+import { Model, Query } from '@nozbe/watermelondb';
 import { field, text, date, children } from '@nozbe/watermelondb/decorators';
 
 
@@ -22,9 +22,10 @@ export default class Citizen extends Model {
    */
   @text('npub') npub: string;
   @text('role') role: string; 
-  @text('alias') alias?: string;
+  @text('alias') alias?: string; // Autogenerado público
+  @text('local_name') localName?: string; // Privado del usuario
   @field('merit') merit: number;
   @date('created_at') createdAt: Date;
-  @children('trust_links') trustLinks: any;
-  @children('tickets') tickets: any;
+  @children('trust_links') trustLinks: Query<any>;
+  @children('tickets') tickets: Query<any>;
 }

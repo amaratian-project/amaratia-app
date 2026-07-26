@@ -1,25 +1,31 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import './global.css';
-import { CanvasMap } from './src/presentation/components/CanvasMap';
-import { CitizenSheet } from './src/presentation/components/CitizenSheet';
-import { DiagnosticScreen } from './src/presentation/screens/DiagnosticScreen';
+import { AppNavigator } from './src/presentation/navigation/AppNavigator';
+
+const darkTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    background: '#0f172a',
+  },
+};
 
 export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
-      <StatusBar style="light" />
-      
-      {/* Fondo Topológico (Grafo Web of Trust) */}
-      <CanvasMap />
-
-      {/* Panel Deslizante de Información Cívica y Kanban */}
-      <CitizenSheet />
-      
-      {/* Pantalla temporal de diagnóstico (Fase 4.5) */}
-      <DiagnosticScreen />
+      <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1 }} edges={['bottom', 'left', 'right']}>
+          <StatusBar style="light" />
+          <NavigationContainer theme={darkTheme}>
+            <AppNavigator />
+          </NavigationContainer>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

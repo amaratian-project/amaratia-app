@@ -6,11 +6,20 @@ module.exports = function(api) {
       'nativewind/babel',
     ],
     plugins: [
-      ['@babel/plugin-proposal-decorators', { legacy: true }],
-      ['@babel/plugin-transform-class-properties'],
-      ['@babel/plugin-transform-private-methods'],
-      ['@babel/plugin-transform-private-property-in-object'],
       'react-native-reanimated/plugin',
     ],
+    overrides: [
+      {
+        test: (fileName) => {
+          return fileName && !fileName.includes('node_modules');
+        },
+        plugins: [
+          ['@babel/plugin-proposal-decorators', { legacy: true }],
+          ['@babel/plugin-transform-class-properties', { loose: true }],
+          ['@babel/plugin-transform-private-methods', { loose: true }],
+          ['@babel/plugin-transform-private-property-in-object', { loose: true }]
+        ]
+      }
+    ]
   };
 };
