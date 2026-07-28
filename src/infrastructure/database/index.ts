@@ -7,6 +7,9 @@ import Citizen from './Citizen';
 import TrustLink from './TrustLink';
 import Ticket from './Ticket';
 import Vault from './Vault';
+import Province from './Province';
+import Cause from './Cause';
+import CitizenProvince from './CitizenProvince';
 
 const adapter = new SQLiteAdapter({
   schema: mySchema,
@@ -25,6 +28,9 @@ export const database = new Database({
     Vault,
     Citizen,
     TrustLink,
-    Ticket
+    Ticket,
+    Province,
+    Cause,
+    CitizenProvince
   ],
 });

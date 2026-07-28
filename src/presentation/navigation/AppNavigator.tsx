@@ -5,6 +5,7 @@ import { IdentityGenerationScreen } from '../screens/onboarding/IdentityGenerati
 import { IdentityRestoreScreen } from '../screens/onboarding/IdentityRestoreScreen';
 import { PinSetupScreen } from '../screens/onboarding/PinSetupScreen';
 import { LoginScreen } from '../screens/onboarding/LoginScreen';
+import { ScannerScreen } from '../screens/onboarding/ScannerScreen';
 import { CanvasMap } from '../components/CanvasMap';
 
 // Definición de las rutas y sus parámetros
@@ -14,7 +15,8 @@ export type RootStackParamList = {
   IdentityRestore: undefined;
   PinSetup: { identity: any }; // Pasa la identidad generada para cifrarla
   Login: undefined;
-  MainApp: undefined;
+  MainApp: { addCitizen?: string } | undefined;
+  Scanner: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,6 +36,7 @@ export const AppNavigator = () => {
       <Stack.Screen name="PinSetup" component={PinSetupScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="MainApp" component={CanvasMap} />
+      <Stack.Screen name="Scanner" component={ScannerScreen} options={{ presentation: 'fullScreenModal' }} />
     </Stack.Navigator>
   );
 };

@@ -1,6 +1,7 @@
 export interface KeyPair {
   nsec: string;
   npub: string;
+  alias?: string;
 }
 
 export interface IIdentityUseCase {

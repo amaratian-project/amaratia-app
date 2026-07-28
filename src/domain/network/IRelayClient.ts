@@ -10,23 +10,23 @@ export interface P2PEvent {
 
 export interface IRelayClient {
   /**
-   * Conecta a un relay o red específica.
+   * Agrega y conecta un nuevo relay al pool.
    */
-  connect(url: string): Promise<void>;
+  addRelay(url: string): Promise<void>;
 
   /**
-   * Desconecta del relay.
+   * Desconecta y remueve un relay del pool.
    */
-  disconnect(url: string): void;
+  removeRelay(url: string): void;
 
   /**
-   * Publica un evento en la red.
+   * Publica un evento en la red (todos los relays conectados).
    */
-  publish(url: string, event: P2PEvent): Promise<void>;
+  publish(event: P2PEvent): Promise<void>;
 
   /**
    * Se suscribe a eventos en la red basados en filtros.
    * Retorna una función para cancelar la suscripción.
    */
-  subscribe(url: string, filters: any[], onEvent: (event: P2PEvent) => void): () => void;
+  subscribe(filters: any[], onEvent: (event: P2PEvent) => void): () => void;
 }

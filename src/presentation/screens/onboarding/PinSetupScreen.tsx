@@ -5,6 +5,9 @@ import type { RouteProp } from '@react-navigation/native';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { QuickCryptoService } from '../../../infrastructure/security/QuickCryptoService';
 import { database } from '../../../infrastructure/database';
+import { useAuth } from '../../../application/context/AuthContext';
+import { NostrAdapter } from '../../../infrastructure/network/NostrAdapter';
+import { finalizeEvent } from 'nostr-tools';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PinSetup'>;
@@ -15,6 +18,7 @@ export const PinSetupScreen = ({ navigation, route }: Props) => {
   const { identity } = route.params;
   const [pin, setPin] = useState('');
   const [isEncrypting, setIsEncrypting] = useState(false);
+  const { login } = useAuth();
 
   const handleKeyPress = (num: string) => {
     if (pin.length < 6) {
@@ -42,22 +46,61 @@ export const PinSetupScreen = ({ navigation, route }: Props) => {
       // Ciframos usando el PIN del usuario (AES-GCM + PBKDF2)
       const encryptedData = await cryptoService.encryptWithPin(payload, pin);
       
+      // Generamos el Alias del ciudadano (Amarata-XXXX)
+      const aliasSuffix = identity.npub.substring(5, 9).toUpperCase();
+      const alias = `Amarata-${aliasSuffix}`;
+
+      // Inyectamos la identidad al estado global
+      login({ ...identity, alias });
+
       // Guardamos la identidad cifrada en la Bóveda oficial (Vault)
       await database.write(async () => {
         const vaultsCollection = database.collections.get('vaults');
         await vaultsCollection.create((vault: any) => {
           vault.encryptedData = JSON.stringify(encryptedData);
         });
-        
-        // Opcional: También podríamos crear el registro público del ciudadano aquí,
-        // pero conceptualmente, la identidad ya está asegurada.
-        const citizensCollection = database.collections.get('citizens');
-        await citizensCollection.create((citizen: any) => {
-          citizen.npub = identity.npub;
-          citizen.role = 'CITIZEN';
-          citizen.merit = 0;
-        });
+
+
+      // Opcional: También podríamos crear el registro público del ciudadano aquí,
+      // pero conceptualmente, la identidad ya está asegurada localmente.
+      const citizensCollection = database.collections.get('citizens');
+      await citizensCollection.create((citizen: any) => {
+        citizen.npub = identity.npub;
+        citizen.role = 'CITIZEN';
+        citizen.merit = 0;
+        citizen.alias = alias;
       });
+    });
+
+      // ¡El Grito de Nacimiento (Kind 0) en la red Nostr!
+      try {
+        const adapter = new NostrAdapter();
+        const profileContent = JSON.stringify({
+          name: alias,
+          about: "Ciudadano Libre de Amaratia",
+          picture: ""
+        });
+        
+        // Finalizamos y firmamos el evento usando la llave privada (que está en hex, así que la decodificamos si es necesario, 
+        // pero identityKeys de IdentityUseCase debería tener privKey si la agregamos. Espera, IdentityUseCase solo retorna nsec y npub.
+        // Necesitamos la privkey en hex (Uint8Array) para firmar. nip19.decode() nos la da.
+        const { nip19 } = require('nostr-tools');
+        const decoded = nip19.decode(identity.nsec);
+        const privateKeyBytes = decoded.data as Uint8Array;
+
+        const eventTemplate = {
+          kind: 0,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [],
+          content: profileContent,
+        };
+        const signedEvent = finalizeEvent(eventTemplate, privateKeyBytes);
+        
+        // No bloqueamos la UI esperando esto
+        adapter.publish(signedEvent as any).catch(e => console.error("Error publicando kind 0:", e));
+      } catch (e) {
+        console.error("Error creando el grito de nacimiento", e);
+      }
 
       // ¡Éxito! Navegamos a la app principal
       navigation.reset({

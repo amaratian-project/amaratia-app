@@ -4,7 +4,6 @@ import { finalizeEvent, generateSecretKey, getPublicKey, nip04 } from 'nostr-too
 
 // La llave pública del desarrollador a donde llegarán los logs (dummy dev pubkey para MVP)
 const DEVELOPER_PUBKEY = 'a8f7c9e0b1d2...'; // Reemplazar por la real
-const RELAY_URL = 'wss://relay.damus.io'; // Relay público de uso general
 
 export class CrashReporter {
   private adapter = new NostrAdapter();
@@ -19,8 +18,6 @@ export class CrashReporter {
       
       // Si el log está vacío o no existe, no hacemos nada
       if (!logs || logs.includes('No hay logs')) return false;
-
-      await this.adapter.connect(RELAY_URL);
 
       // Usamos la llave del usuario si existe, o generamos una temporal anónima
       const senderPrivKey = userPrivateKeyHex 
@@ -41,15 +38,13 @@ export class CrashReporter {
 
       const signedEvent = finalizeEvent(eventTemplate, senderPrivKey);
 
-      await this.adapter.publish(RELAY_URL, signedEvent as any);
+      await this.adapter.publish(signedEvent as any);
       
       Logger.log('Crash report enviado exitosamente vía Nostr.');
       return true;
     } catch (e) {
       Logger.error('Falló el envío del crash report', e);
       return false;
-    } finally {
-      this.adapter.disconnect(RELAY_URL);
     }
   }
 }

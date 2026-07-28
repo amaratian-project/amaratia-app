@@ -4,6 +4,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { QuickCryptoService } from '../../../infrastructure/security/QuickCryptoService';
 import { database } from '../../../infrastructure/database';
+import { useAuth } from '../../../application/context/AuthContext';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Login'>;
@@ -12,6 +13,7 @@ type Props = {
 export const LoginScreen = ({ navigation }: Props) => {
   const [pin, setPin] = useState('');
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const { login } = useAuth();
 
   const handleKeyPress = (num: string) => {
     if (pin.length < 6) {
@@ -48,8 +50,24 @@ export const LoginScreen = ({ navigation }: Props) => {
         throw new Error('PIN incorrecto. Acceso denegado.');
       }
 
-      // const identity = JSON.parse(decryptedString);
-      // Aquí se cargaría la identidad en memoria (ej. Zustand o Context) para usarla en la app.
+      const identity = JSON.parse(decryptedString);
+      
+      // Intentamos recuperar el alias desde la colección de citizens si existe
+      let alias = `Amarata-${identity.npub.substring(5, 9).toUpperCase()}`;
+      try {
+        const citizens = await database.collections.get('citizens')
+          .query() // TODO: filtrar por npub si es necesario
+          .fetch();
+        if (citizens.length > 0) {
+          const myCitizen = citizens.find((c: any) => c.npub === identity.npub);
+          if (myCitizen && (myCitizen as any).alias) alias = (myCitizen as any).alias;
+        }
+      } catch (e) {
+        console.log("No local alias found, using default");
+      }
+
+      // Cargamos la identidad en memoria
+      login({ ...identity, alias });
 
       // 3. ¡Éxito! Navegamos a la app principal
       navigation.reset({

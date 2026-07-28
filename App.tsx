@@ -6,6 +6,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import './global.css';
 import { AppNavigator } from './src/presentation/navigation/AppNavigator';
+import { AuthProvider } from './src/application/context/AuthContext';
 
 const darkTheme = {
   ...DefaultTheme,
@@ -21,9 +22,11 @@ export default function App() {
       <SafeAreaProvider>
         <SafeAreaView style={{ flex: 1 }} edges={['bottom', 'left', 'right']}>
           <StatusBar style="light" />
-          <NavigationContainer theme={darkTheme}>
-            <AppNavigator />
-          </NavigationContainer>
+          <AuthProvider>
+            <NavigationContainer theme={darkTheme}>
+              <AppNavigator />
+            </NavigationContainer>
+          </AuthProvider>
         </SafeAreaView>
       </SafeAreaProvider>
     </GestureHandlerRootView>

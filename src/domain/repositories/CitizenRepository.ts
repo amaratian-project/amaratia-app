@@ -15,6 +15,8 @@ export class CitizenRepository {
   static async getHydratedCitizens(): Promise<GraphTopology> {
     const allCitizens = await database.collections.get('citizens').query().fetch();
     const allLinks = await database.collections.get('trust_links').query().fetch();
+    const allProvinces = await database.collections.get('provinces').query().fetch();
+    const allMemberships = await database.collections.get('citizen_provinces').query().fetch();
 
     let simNodes: UnifiedCitizenProfile[] = [];
     let simLinks: { sourceId: string; targetId: string; level: number }[] = [];
@@ -37,6 +39,23 @@ export class CitizenRepository {
             localName: cit.localName,
           },
           level,
+          nodeType: 'CITIZEN'
+        });
+      }
+    };
+
+    const addProvince = (prov: any) => {
+      if (!nodeMap.has(prov.id)) {
+        nodeMap.set(prov.id, {
+          networkData: {
+            id: prov.id,
+            alias: prov.name || 'Provincia Desconocida',
+            merit: 0,
+            role: 'PROVINCE',
+          },
+          localData: {},
+          level: -1, // Nivel Macro
+          nodeType: 'PROVINCE'
         });
       }
     };
@@ -61,6 +80,19 @@ export class CitizenRepository {
       if (targetCitizen && nodeMap.has(sourceId)) {
         addNode(targetCitizen, level);
         simLinks.push({ sourceId, targetId, level });
+      }
+    });
+
+    // Agregar provincias
+    allProvinces.forEach(p => addProvince(p));
+
+    // Agregar links de membresía (Ciudadano -> Provincia)
+    allMemberships.forEach(m => {
+      const citizenId = (m as any)._raw.citizen_id;
+      const provinceId = (m as any)._raw.province_id;
+      
+      if (nodeMap.has(citizenId) && nodeMap.has(provinceId)) {
+        simLinks.push({ sourceId: provinceId, targetId: citizenId, level: -1 }); // Nivel -1 para conexiones macro
       }
     });
 

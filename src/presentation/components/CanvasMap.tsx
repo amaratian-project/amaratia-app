@@ -1,13 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Text, Platform } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Text, Platform, Pressable } from 'react-native';
 import { Canvas, Circle, Group, Line, vec, DashPathEffect, Text as SkiaText, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useSharedValue, runOnJS, useDerivedValue, useAnimatedStyle, withSpring, withTiming, SharedValue, interpolate, Extrapolation } from 'react-native-reanimated';
+import { useSharedValue, runOnJS, useDerivedValue, useAnimatedStyle, withSpring, withTiming, SharedValue, interpolate, Extrapolation, interpolateColor } from 'react-native-reanimated';
 import Animated from 'react-native-reanimated';
 import { database } from '../../infrastructure/database';
 import { injectDummyTopology } from '../../infrastructure/database/dummyData';
 import { Logger } from '../../infrastructure/telemetry/Logger';
-import { NodeInfoOverlay } from './NodeInfoOverlay';
+import { QRGenerator } from './QRGenerator';
+import { FloatingDock } from './FloatingDock';
+import { ContextualBottomSheet } from './ContextualBottomSheet';
+import { CitizenProfileContent } from './CitizenProfileContent';
+import { ActionMenuContent } from './ActionMenuContent';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 import { CitizenRepository } from '../../domain/repositories/CitizenRepository';
 
 const { width, height } = Dimensions.get('window');
@@ -63,13 +69,7 @@ const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focusTransi
   const nodeRadius = getRadius(node.level);
   const displayName = node.localName || node.alias;
 
-  const posX = useSharedValue(node.pos.x);
-  const posY = useSharedValue(node.pos.y);
 
-  useEffect(() => {
-    posX.value = withSpring(node.pos.x);
-    posY.value = withSpring(node.pos.y);
-  }, [node.pos.x, node.pos.y]);
 
   const finalOpacity = useDerivedValue(() => {
     const baseZoomOpacity = interpolate(scale.value, [0.4, 0.7], [0, 1], Extrapolation.CLAMP);
@@ -84,10 +84,7 @@ const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focusTransi
     return baseZoomOpacity * focusMultiplier;
   });
 
-  const transform = useDerivedValue(() => [
-    { translateX: posX.value }, 
-    { translateY: posY.value + nodeRadius + 14 }
-  ]);
+  const transform = [{ translateX: node.pos.x }, { translateY: node.pos.y + nodeRadius + 14 }];
 
   const textWidth = font.getTextWidth(displayName);
 
@@ -106,13 +103,7 @@ interface SkiaNodeProps {
 }
 
 const SkiaNode = React.memo(({ node, activeFocusState, focusTransition }: SkiaNodeProps) => {
-  const posX = useSharedValue(node.pos.x);
-  const posY = useSharedValue(node.pos.y);
 
-  useEffect(() => {
-    posX.value = withSpring(node.pos.x);
-    posY.value = withSpring(node.pos.y);
-  }, [node.pos.x, node.pos.y]);
 
   const getRadius = (level: number) => {
     switch (level) {
@@ -125,7 +116,7 @@ const SkiaNode = React.memo(({ node, activeFocusState, focusTransition }: SkiaNo
   const { rMain, rSel } = getRadius(node.level);
 
   // En lugar de calcular cx/cy constantemente, aplicamos un transform matricial
-  const transform = useDerivedValue(() => [{ translateX: posX.value }, { translateY: posY.value }]);
+  const transform = [{ translateX: node.pos.x }, { translateY: node.pos.y }];
   
   const focusOpacity = useDerivedValue(() => {
     const state = activeFocusState.value;
@@ -156,20 +147,8 @@ interface SkiaLinkProps {
 }
 
 const SkiaLink = React.memo(({ link, activeFocusState, focusTransition }: SkiaLinkProps) => {
-  const p1X = useSharedValue(link.p1.x);
-  const p1Y = useSharedValue(link.p1.y);
-  const p2X = useSharedValue(link.p2.x);
-  const p2Y = useSharedValue(link.p2.y);
-
-  useEffect(() => {
-    p1X.value = withSpring(link.p1.x);
-    p1Y.value = withSpring(link.p1.y);
-    p2X.value = withSpring(link.p2.x);
-    p2Y.value = withSpring(link.p2.y);
-  }, [link.p1.x, link.p1.y, link.p2.x, link.p2.y]);
-
-  const p1 = useDerivedValue(() => vec(p1X.value, p1Y.value));
-  const p2 = useDerivedValue(() => vec(p2X.value, p2Y.value));
+  const p1 = vec(link.p1.x, link.p1.y);
+  const p2 = vec(link.p2.x, link.p2.y);
   
   const focusOpacity = useDerivedValue(() => {
     const state = activeFocusState.value;
@@ -193,6 +172,7 @@ const SkiaLink = React.memo(({ link, activeFocusState, focusTransition }: SkiaLi
 }, (prev, next) => prev.link.sourceId === next.link.sourceId && prev.link.targetId === next.link.targetId);
 
 export const CanvasMap = () => {
+  const navigation = useNavigation<NativeStackNavigationProp<any>>();
   // Inicialización de la fuente nativa
   const fontNormal = useFont(require('../../../assets/Modelica-Regular.ttf'), 11);
   const fontBold = useFont(require('../../../assets/Modelica-Bold.ttf'), 14);
@@ -202,14 +182,82 @@ export const CanvasMap = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [fullTopology, setFullTopology] = useState<{ nodes: any[], links: any[] } | null>(null);
   
-  const [nodeLimit, setNodeLimit] = useState(300);
-  const [sliderVal, setSliderVal] = useState(300);
+  const [showQR, setShowQR] = useState(false);
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [currentLOD, setCurrentLOD] = useState(1);
+  const animMode = useSharedValue(1);
 
   const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
+
+  const SCREEN_HEIGHT = Dimensions.get('window').height;
+  const panelTranslateY = useSharedValue(SCREEN_HEIGHT);
+
+  // Garantizar que la animación de apertura del panel se dispare después del render.
+  useEffect(() => {
+    if (selectedNode || showActionMenu) {
+      panelTranslateY.value = withSpring(0, { damping: 20, stiffness: 200, mass: 0.8 });
+    }
+  }, [selectedNode, showActionMenu, panelTranslateY]);
 
   // ESTADO 100% NATIVO PARA EL FOCUS MODE (CERO REACT RENDER)
   const activeFocusState = useSharedValue<{ selected: string | null, connected: Record<string, boolean> }>({ selected: null, connected: {} });
   const focusTransition = useSharedValue(0);
+
+  const openActionMenu = () => {
+    if (!selectedNode && !showActionMenu) {
+      panelTranslateY.value = SCREEN_HEIGHT;
+    }
+    setShowActionMenu(true);
+    setSelectedNode(null);
+  };
+
+  const closePanels = () => {
+    panelTranslateY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, (finished) => {
+      if (finished) {
+        runOnJS(setShowActionMenu)(false);
+        runOnJS(setSelectedNode)(null);
+      }
+    });
+    activeFocusState.value = { selected: null, connected: {} };
+    focusTransition.value = withTiming(0, { duration: 300 });
+  };
+
+  const handleNodePress = useCallback((node: MapNode) => {
+    if (selectedNode?.id === node.id) {
+      closePanels();
+    } else {
+      Vibration.vibrate(50);
+      const connected: Record<string, boolean> = {};
+      connected[node.id] = true; // El nodo en si debe estar marcado como conectado para que sus lineas brillen
+      links.forEach(l => {
+        if (l.sourceId === node.id) connected[l.targetId] = true;
+        if (l.targetId === node.id) connected[l.sourceId] = true;
+      });
+      activeFocusState.value = { selected: node.id, connected };
+      focusTransition.value = withTiming(1, { duration: 300 });
+
+      if (!selectedNode && !showActionMenu) {
+        panelTranslateY.value = SCREEN_HEIGHT;
+      }
+      setSelectedNode(node);
+      setShowActionMenu(false);
+    }
+  }, [selectedNode, showActionMenu, panelTranslateY, SCREEN_HEIGHT, links, activeFocusState, focusTransition]);
+
+  const goToLOD = (level: number) => {
+    setCurrentLOD(level);
+    if (level === 1) {
+      scale.value = withSpring(1.0);
+      animMode.value = withTiming(1);
+    } else if (level === 2) {
+      scale.value = withSpring(0.4);
+      animMode.value = withTiming(2);
+    } else if (level === 3) {
+      scale.value = withSpring(0.15);
+      animMode.value = withTiming(3);
+    }
+  };
+
 
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -269,7 +317,7 @@ export const CanvasMap = () => {
       nodeMap.get(mainId)!.pos.x = CENTER.x;
       nodeMap.get(mainId)!.pos.y = CENTER.y;
 
-      const allSimNodes = Array.from(nodeMap.values()).slice(0, nodeLimit);
+      const allSimNodes = Array.from(nodeMap.values()).slice(0, 300);
       const allowedIds = new Set(allSimNodes.map(n => n.id));
       
       const allSimLinks = topology.links
@@ -426,20 +474,31 @@ export const CanvasMap = () => {
       setNodes([...allSimNodes]);
       setLinks([...allSimLinks]);
       setIsLoading(false);
-  }, [fullTopology, nodeLimit]);
+  }, [fullTopology]);
 
   const [bounds, setBounds] = useState({ R: 1000 });
 
   const MIN_SCALE = Math.max(0.05, Math.min(width, height) / (bounds.R * 2.5)); // Zoom out generoso
   const MAX_SCALE = 4.0; // Zoom in profundo para interactuar cómodamente con las hojas fucsias
 
+  enum GestureMode {
+    NONE = 0,
+    PANNING = 1,
+    PINCHING = 2,
+    TAPPING = 3
+  }
+  const activeGesture = useSharedValue(GestureMode.NONE);
+
   const panGesture = Gesture.Pan()
     .maxPointers(1) // EXCLUSIVIDAD: Solo un dedo permite el paneo.
-    .onBegin(() => {
+    .onStart(() => {
+      if (activeGesture.value !== GestureMode.NONE) return;
+      activeGesture.value = GestureMode.PANNING;
       savedTranslateX.value = translateX.value;
       savedTranslateY.value = translateY.value;
     })
     .onUpdate((e) => {
+      if (activeGesture.value !== GestureMode.PANNING) return;
       const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 100);
       const panLimitY = Math.max(0, bounds.R * scale.value - height / 2 + 100);
       let nextX = savedTranslateX.value + e.translationX;
@@ -455,12 +514,16 @@ export const CanvasMap = () => {
       translateY.value = nextY;
     })
     .onEnd(() => {
+      if (activeGesture.value !== GestureMode.PANNING) return;
       const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 100);
       const panLimitY = Math.max(0, bounds.R * scale.value - height / 2 + 100);
       if (translateX.value > panLimitX) translateX.value = withSpring(panLimitX);
       if (translateX.value < -panLimitX) translateX.value = withSpring(-panLimitX);
       if (translateY.value > panLimitY) translateY.value = withSpring(panLimitY);
       if (translateY.value < -panLimitY) translateY.value = withSpring(-panLimitY);
+    })
+    .onFinalize(() => {
+      if (activeGesture.value === GestureMode.PANNING) activeGesture.value = GestureMode.NONE;
     });
 
   const handleSemanticZoomOut = () => {
@@ -468,7 +531,9 @@ export const CanvasMap = () => {
   };
 
   const pinchGesture = Gesture.Pinch()
-    .onBegin((e) => {
+    .onStart((e) => {
+      if (activeGesture.value !== GestureMode.NONE) return;
+      activeGesture.value = GestureMode.PINCHING;
       savedScale.value = scale.value;
       savedTranslateX.value = translateX.value;
       savedTranslateY.value = translateY.value;
@@ -476,6 +541,9 @@ export const CanvasMap = () => {
       originFocalY.value = e.focalY;
     })
     .onUpdate((e) => {
+      if (activeGesture.value !== GestureMode.PINCHING) return;
+      if (e.numberOfPointers < 2) return; // Prevent focal jump on release hardware bug
+
       let nextScale = savedScale.value * e.scale;
       
       // Resistencia elástica dura (15%) si se pasa del límite
@@ -486,33 +554,51 @@ export const CanvasMap = () => {
       }
       scale.value = nextScale;
 
-      // Magia de Focal Zoom: Compensar el paneo basándonos en cuánto creció la escala
-      const adjustedFocalX = originFocalX.value - width / 2;
-      const adjustedFocalY = originFocalY.value - height / 2;
-      const scaleRatio = nextScale / savedScale.value;
+      const Px_start = originFocalX.value - width / 2;
+      const Py_start = originFocalY.value - height / 2;
 
-      translateX.value = savedTranslateX.value * scaleRatio + adjustedFocalX * (1 - scaleRatio);
-      translateY.value = savedTranslateY.value * scaleRatio + adjustedFocalY * (1 - scaleRatio);
+      const scaleRatio = nextScale / savedScale.value;
+      // UNICIDAD: Zoom estricto centrado en el punto original. Sin arrastre.
+      translateX.value = savedTranslateX.value * scaleRatio + Px_start * (1 - scaleRatio);
+      translateY.value = savedTranslateY.value * scaleRatio + Py_start * (1 - scaleRatio);
     })
     .onEnd(() => {
+      if (activeGesture.value !== GestureMode.PINCHING) return;
       let finalScale = scale.value;
-      if (scale.value < MIN_SCALE) {
-        finalScale = MIN_SCALE;
-        scale.value = withSpring(MIN_SCALE);
-        runOnJS(handleSemanticZoomOut)();
-      } else if (scale.value > MAX_SCALE) {
-        finalScale = MAX_SCALE;
-        scale.value = withSpring(MAX_SCALE);
-      }
+      if (scale.value < MIN_SCALE) finalScale = MIN_SCALE;
+      if (scale.value > MAX_SCALE) finalScale = MAX_SCALE;
 
-      // Si al terminar de hacer zoom, la cámara quedó "fuera de los límites" (porque el grafo encogió), 
-      // forzamos a la cámara a regresar al límite del nuevo tamaño del grafo con un resorte.
       const panLimitX = Math.max(0, bounds.R * finalScale - width / 2 + 100);
       const panLimitY = Math.max(0, bounds.R * finalScale - height / 2 + 100);
-      if (translateX.value > panLimitX) translateX.value = withSpring(panLimitX);
-      if (translateX.value < -panLimitX) translateX.value = withSpring(-panLimitX);
-      if (translateY.value > panLimitY) translateY.value = withSpring(panLimitY);
-      if (translateY.value < -panLimitY) translateY.value = withSpring(-panLimitY);
+
+      let targetX = translateX.value;
+      let targetY = translateY.value;
+
+      if (finalScale !== scale.value) {
+        const R = finalScale / scale.value;
+        targetX = translateX.value * R;
+        targetY = translateY.value * R;
+        scale.value = withSpring(finalScale);
+      }
+
+      if (targetX > panLimitX) targetX = panLimitX;
+      if (targetX < -panLimitX) targetX = -panLimitX;
+      if (targetY > panLimitY) targetY = panLimitY;
+      if (targetY < -panLimitY) targetY = -panLimitY;
+
+      if (targetX !== translateX.value) translateX.value = withSpring(targetX);
+      if (targetY !== translateY.value) translateY.value = withSpring(targetY);
+
+      if (finalScale < 0.25 && currentLOD !== 3) {
+        runOnJS(goToLOD)(3);
+      } else if (finalScale >= 0.25 && finalScale < 0.6 && currentLOD !== 2) {
+        runOnJS(goToLOD)(2);
+      } else if (finalScale >= 0.6 && currentLOD !== 1) {
+        runOnJS(goToLOD)(1);
+      }
+    })
+    .onFinalize(() => {
+      if (activeGesture.value === GestureMode.PINCHING) activeGesture.value = GestureMode.NONE;
     });
 
   const handleNodeSelection = (node: MapNode | null) => {
@@ -540,6 +626,7 @@ export const CanvasMap = () => {
     .maxDistance(10) // EXCLUSIVIDAD: Si el dedo se mueve más de 10px, se cancela el tap.
     .runOnJS(true) // <-- Evita que 'nodes' se serialice al hilo de UI y choque con el motor de físicas
     .onEnd((e) => {
+      if (activeGesture.value !== GestureMode.NONE) return;
       const originX = width / 2;
       const originY = height / 2;
       
@@ -564,20 +651,54 @@ export const CanvasMap = () => {
         }
       }
 
-      runOnJS(handleNodeSelection)(foundNode);
+      if (foundNode) {
+        runOnJS(handleNodePress)(foundNode);
+      } else {
+        runOnJS(closePanels)();
+      }
     });
 
   const composed = Gesture.Exclusive(panGesture, pinchGesture, tapGesture);
 
   const globalTransform = useDerivedValue(() => {
     return [
-      { translateX: CENTER.x + translateX.value },
-      { translateY: CENTER.y + translateY.value },
+      { translateX: translateX.value },
+      { translateY: translateY.value },
       { scale: scale.value },
-      { translateX: -CENTER.x },
-      { translateY: -CENTER.y },
     ];
   });
+
+  const animatedBackground = useAnimatedStyle(() => {
+    const bgColor = interpolateColor(
+      animMode.value,
+      [1, 2, 3],
+      ['#020617', '#0f172a', '#1e293b']
+    );
+    return { backgroundColor: bgColor };
+  });
+
+  const lodControlsStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: (showActionMenu || selectedNode) ? panelTranslateY.value : 0 }]
+    };
+  });
+
+  const skiaElements = React.useMemo(() => (
+    <Group origin={CENTER} transform={globalTransform}>
+      {links.map((link, index) => (
+        <SkiaLink key={`link-${index}`} link={link} activeFocusState={activeFocusState} focusTransition={focusTransition} />
+      ))}
+      {nodes.map(node => (
+        <SkiaNode key={`node-${node.id}`} node={node} activeFocusState={activeFocusState} focusTransition={focusTransition} />
+      ))}
+      {nodes.map(node => {
+        const font = node.level === 0 ? fontBold : fontNormal;
+        return (
+          <NodeLabel key={`label-${node.id}`} node={node} scale={scale} font={font} activeFocusState={activeFocusState} focusTransition={focusTransition} />
+        );
+      })}
+    </Group>
+  ), [nodes, links, fontBold, fontNormal, activeFocusState, focusTransition, scale, globalTransform]);
 
   if (isLoading || !fontNormal || !fontBold) {
     return (
@@ -587,83 +708,94 @@ export const CanvasMap = () => {
     );
   }
 
-  const debugPan = Gesture.Pan()
-    .onUpdate((e) => {
-      // Mapeo simple: 0px a 200px = 0 a 300 nodos
-      let newVal = Math.floor((e.x / 200) * 300);
-      newVal = Math.max(1, Math.min(300, newVal));
-      runOnJS(setSliderVal)(newVal);
-    })
-    .onEnd((e) => {
-      let newVal = Math.floor((e.x / 200) * 300);
-      newVal = Math.max(1, Math.min(300, newVal));
-      runOnJS(setNodeLimit)(newVal);
-    });
+
+
+
 
   return (
-    <View style={styles.container}>
-      {/* DEBUGER UI (Temporal) */}
-      <View style={{ position: 'absolute', top: 50, left: 20, zIndex: 999, backgroundColor: 'rgba(0,0,0,0.7)', padding: 10, borderRadius: 10 }}>
-        <Text style={{ color: 'white', marginBottom: 5 }}>Nodos: {sliderVal}</Text>
-        <GestureDetector gesture={debugPan}>
-          <View style={{ width: 200, height: 40, backgroundColor: '#333', justifyContent: 'center' }}>
-            <View style={{ width: (sliderVal / 300) * 200, height: 40, backgroundColor: '#06b6d4', opacity: 0.5 }} />
-          </View>
-        </GestureDetector>
-        <Text style={{ color: '#aaa', fontSize: 10, marginTop: 5 }}>Desliza para ajustar</Text>
-      </View>
-
+    <Animated.View style={[styles.container, animatedBackground]}>
       <GestureDetector gesture={composed}>
         <View style={styles.canvasWrapper}>
           <Canvas style={{ flex: 1 }}>
-            <Group transform={globalTransform}>
-        {/* Renderizado en orden de Z-Index (Líneas debajo, Nodos encima) */}
-        {links.map((link, index) => {
-          return <SkiaLink key={`link-${index}`} link={link} activeFocusState={activeFocusState} focusTransition={focusTransition} />;
-        })}
-        {/* Nodos por encima */}
-        {nodes.map(node => {
-          return (
-            <SkiaNode 
-              key={`node-${node.id}`} 
-              node={node} 
-              activeFocusState={activeFocusState} 
-              focusTransition={focusTransition}
-            />
-          );
-        })}
-        {/* Textos por encima de los nodos */}
-        {nodes.map(node => {
-          const font = node.level === 0 ? fontBold : fontNormal;
-          return (
-            <NodeLabel 
-              key={`label-${node.id}`} 
-              node={node} 
-              scale={scale} 
-              font={font}
-              activeFocusState={activeFocusState} 
-              focusTransition={focusTransition}
-            />
-          );
-        })}
-            </Group>
+            {skiaElements}
           </Canvas>
         </View>
       </GestureDetector>
 
-      {selectedNode && (
-        <NodeInfoOverlay 
-          citizen={selectedNode}
-          onClose={() => setSelectedNode(null)}
-          onViewProfile={() => Logger.log('Ver perfil de', selectedNode.id)}
-          onUpdateLocalName={(newName) => {
-            // Actualizar el estado local para reflejar el cambio instantáneamente en el mapa
-            setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
-            setSelectedNode({ ...selectedNode, localName: newName });
-          }}
+      {/* HUD INFERIOR UNIFICADO (Flexbox) */}
+      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'box-none', justifyContent: 'flex-end' }]}>
+        {/* Se eliminó el fondo oscuro interactivo según petición del usuario */}
+        
+        {/* Navegador de Niveles (LOD) apoyado sobre el panel */}
+        <Animated.View style={[{ alignItems: 'flex-end', paddingRight: 20, paddingBottom: 10, pointerEvents: 'box-none' }, lodControlsStyle]}>
+          <View style={styles.lodControlsContainer}>
+            {[
+              { level: 3, label: 'Causas', icon: '⚖️' },
+              { level: 2, label: 'Provincias', icon: '🏛️' },
+              { level: 1, label: 'Ciudadanos', icon: '👤' },
+            ].map((item) => {
+              const isActive = currentLOD === item.level;
+              return (
+                <Pressable key={item.level} onPress={() => goToLOD(item.level)} style={[styles.lodSegment, isActive && styles.lodSegmentActive]}>
+                  <Text style={[styles.lodSegmentIcon, isActive && { opacity: 1 }]}>{item.icon}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        {/* Panel Activo */}
+        <View style={{ width: '100%', pointerEvents: 'box-none' }}>
+          
+          <ContextualBottomSheet panelTranslateY={panelTranslateY} onClose={closePanels}>
+            <View>
+              {selectedNode && (
+                <CitizenProfileContent 
+                  citizen={selectedNode as any}
+                  onClose={closePanels}
+                  onViewProfile={() => {}}
+                  onUpdateLocalName={(newName) => {
+                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
+                    setSelectedNode({ ...selectedNode, localName: newName } as any);
+                  }}
+                />
+              )}
+              {showActionMenu && (
+                <ActionMenuContent 
+                  onScanCitizen={() => {
+                    closePanels();
+                    navigation.navigate('Scanner');
+                  }}
+                  onCreateProvince={() => {
+                    closePanels();
+                    console.log('Navegar a Crear Provincia');
+                  }}
+                />
+              )}
+            </View>
+          </ContextualBottomSheet>
+
+          {!selectedNode && !showActionMenu && (
+            <View style={{ alignItems: 'center', paddingBottom: 30, pointerEvents: 'box-none' }}>
+              <FloatingDock
+                onAddPress={openActionMenu}
+                onMessagePress={() => console.log('Mensajes')}
+                onMarketPress={() => console.log('Mercado')}
+                onVotePress={() => console.log('Votaciones')}
+                onProfilePress={() => setShowQR(true)} 
+              />
+            </View>
+          )}
+
+        </View>
+      </View>
+      {showQR && (
+        <QRGenerator 
+          identity={{ nsec: '***REMOVED_SECRET***', alias: 'Aurelio (Dev)' } as any} 
+          onClose={() => setShowQR(false)} 
         />
       )}
-    </View>
+    </Animated.View>
   );
 };
 
@@ -675,5 +807,34 @@ const styles = StyleSheet.create({
   },
   canvasWrapper: {
     flex: 1,
-  }
+  },
+  lodControlsContainer: {
+    flexDirection: 'column',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    padding: 6,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+    gap: 8,
+  },
+  lodSegment: {
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 24,
+    backgroundColor: 'transparent',
+  },
+  lodSegmentActive: {
+    backgroundColor: '#3b82f6', 
+  },
+  lodSegmentIcon: {
+    fontSize: 24, 
+    opacity: 0.6,
+  },
 });

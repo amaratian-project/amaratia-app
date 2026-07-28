@@ -29,7 +29,13 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Amaratia necesita acceso a la cámara para escanear y agregar ciudadanos de confianza."
+        }
+      ]
     ]
   }
 }

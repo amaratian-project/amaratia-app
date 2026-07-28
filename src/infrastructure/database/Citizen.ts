@@ -28,4 +28,5 @@ export default class Citizen extends Model {
   @date('created_at') createdAt: Date;
   @children('trust_links') trustLinks: Query<any>;
   @children('tickets') tickets: Query<any>;
+  @children('citizen_provinces') provinceMemberships: Query<any>;
 }

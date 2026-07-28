@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const mySchema = appSchema({
-  version: 3, // Bump version to 3 for local_name support
+  version: 4, // Bump version to 4 for provinces support
   tables: [
     tableSchema({
       name: 'vaults',
@@ -37,6 +37,37 @@ export const mySchema = appSchema({
         { name: 'status', type: 'string' }, // TODO, IN_PROGRESS, DONE
         { name: 'creator_id', type: 'string', isIndexed: true },
         { name: 'created_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
+      name: 'provinces',
+      columns: [
+        { name: 'pubkey', type: 'string', isIndexed: true }, 
+        { name: 'name', type: 'string' },
+        { name: 'description', type: 'string', isOptional: true },
+        { name: 'founder_pubkey', type: 'string', isIndexed: true },
+        { name: 'status', type: 'string' }, // 'DRAFT' o 'ACTIVE'
+        { name: 'is_public', type: 'boolean' },
+        { name: 'created_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
+      name: 'causes',
+      columns: [
+        { name: 'pubkey', type: 'string', isIndexed: true },
+        { name: 'title', type: 'string' },
+        { name: 'status', type: 'string' },
+        { name: 'province_id', type: 'string', isIndexed: true, isOptional: true },
+        { name: 'created_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
+      name: 'citizen_provinces',
+      columns: [
+        { name: 'citizen_id', type: 'string', isIndexed: true },
+        { name: 'province_id', type: 'string', isIndexed: true },
+        { name: 'title', type: 'string', isOptional: true }, // Ej. 'CONSUL', 'MEMBER'
+        { name: 'joined_at', type: 'number' },
       ]
     })
   ]

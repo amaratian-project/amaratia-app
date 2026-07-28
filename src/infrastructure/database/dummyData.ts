@@ -10,6 +10,8 @@ export const injectDummyTopology = async () => {
   try {
     const citizensCollection = database.collections.get('citizens');
     const trustLinksCollection = database.collections.get('trust_links');
+    const provincesCollection = database.collections.get('provinces');
+    const membershipsCollection = database.collections.get('citizen_provinces');
 
     const existingCitizens = await citizensCollection.query().fetchCount();
     
@@ -121,9 +123,34 @@ export const injectDummyTopology = async () => {
           }
         }
       }
+
+      // Nivel 3: Provincias (Agrupando algunos ciudadanos)
+      Logger.log('Generando 3 Provincias...');
+      const provinces = [];
+      for (let i = 0; i < 3; i++) {
+        const prov = await provincesCollection.create((p: any) => {
+          p.pubkey = `npub_prov_${i}`;
+          p.name = ['Gremio de Desarrolladores', 'Ministerio de Arte', 'Asamblea de Economía'][i];
+          p.description = `Provincia simulada número ${i}`;
+          p.founderPubkey = mainCitizen.id;
+        });
+        provinces.push(prov);
+      }
+
+      // Asignar el 30% de los ciudadanos a provincias aleatorias
+      for (const cit of [...level1Citizens, ...level2Citizens]) {
+        if (Math.random() < 0.3) {
+          const randomProv = provinces[Math.floor(Math.random() * provinces.length)];
+          await membershipsCollection.create((m: any) => {
+            m.citizen.set(cit);
+            m.province.set(randomProv);
+            m.role = 'MEMBER';
+          });
+        }
+      }
     });
 
-    Logger.log('Inyección de datos semilla finalizada con éxito.');
+    Logger.log('¡Topología Híbrida Inyectada con Éxito!');
   } catch (error) {
     Logger.error('Error inyectando dummy data:', error);
   }
