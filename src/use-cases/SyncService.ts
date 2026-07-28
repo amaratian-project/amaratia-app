@@ -20,7 +20,7 @@ export class SyncService {
       limit: 50
     }];
 
-    return this.relayClient.subscribe(relayUrl, filters, async (event: P2PEvent) => {
+    return this.relayClient.subscribe(filters, async (event: P2PEvent) => {
       try {
         await this.database.write(async () => {
           const ticketsCollection = this.database.get('tickets');

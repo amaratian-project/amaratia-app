@@ -7,6 +7,13 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import './global.css';
 import { AppNavigator } from './src/presentation/navigation/AppNavigator';
 import { AuthProvider } from './src/application/context/AuthContext';
+import { DependencyProvider } from './src/application/context/DependencyContext';
+import { CitizenRepository } from './src/domain/repositories/CitizenRepository';
+import { injectDummyTopology } from './src/infrastructure/database/dummyData';
+
+const dependencies = {
+  citizenRepository: new CitizenRepository(),
+};
 
 const darkTheme = {
   ...DefaultTheme,
@@ -17,15 +24,29 @@ const darkTheme = {
 };
 
 export default function App() {
+  const [isReady, setIsReady] = React.useState(false);
+
+  React.useEffect(() => {
+    const init = async () => {
+      await injectDummyTopology();
+      setIsReady(true);
+    };
+    init();
+  }, []);
+
+  if (!isReady) return null;
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <SafeAreaView style={{ flex: 1 }} edges={['bottom', 'left', 'right']}>
           <StatusBar style="light" />
           <AuthProvider>
-            <NavigationContainer theme={darkTheme}>
-              <AppNavigator />
-            </NavigationContainer>
+            <DependencyProvider dependencies={dependencies}>
+              <NavigationContainer theme={darkTheme}>
+                <AppNavigator />
+              </NavigationContainer>
+            </DependencyProvider>
           </AuthProvider>
         </SafeAreaView>
       </SafeAreaProvider>
