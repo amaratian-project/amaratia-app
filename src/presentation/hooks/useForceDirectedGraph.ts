@@ -10,7 +10,7 @@ const CENTER = vec(width / 2, height / 2);
 export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
   const [nodes, setNodes] = useState<MapNode[]>([]);
   const [links, setLinks] = useState<MapLink[]>([]);
-  const [bounds, setBounds] = useState({ R: 1000 });
+  const [bounds, setBounds] = useState({ R: 1000, citizenR: 500, provinceR: 1000 });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,7 +40,7 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
         localName: undefined,
         merit: 0,
         pos: { x: 0, y: 0 },
-        color: '#64748b', // Color para provincia
+        color: '#f59e0b', // Color ámbar para provincia
         level: -1,
         vx: 0,
         vy: 0
@@ -58,11 +58,13 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
     nodeMap.get(mainId)!.pos.x = CENTER.x;
     nodeMap.get(mainId)!.pos.y = CENTER.y;
 
-    const allSimNodes = Array.from(nodeMap.values()).slice(0, 300);
-    const allowedIds = new Set(allSimNodes.map(n => n.id));
+    const citizenNodes = Array.from(nodeMap.values()).filter(n => n.level !== -1);
+    const provinceNodes = Array.from(nodeMap.values()).filter(n => n.level === -1);
+    const citizenIds = new Set(citizenNodes.map(n => n.id));
     
+    // Solo mapear todos los enlaces, pero los primarios (para el fractal) serán solo de ciudadanos
     const allSimLinks: MapLink[] = fullTopology.links
-      .filter(l => allowedIds.has(l.sourceId) && allowedIds.has(l.targetId))
+      .filter(l => nodeMap.has(l.sourceId) && nodeMap.has(l.targetId))
       .map(l => ({
         sourceId: l.sourceId,
         targetId: l.targetId,
@@ -70,24 +72,27 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
         p2: nodeMap.get(l.targetId)!.pos,
         level: l.level,
         color: nodeMap.get(l.targetId)!.color,
-        isPrimary: false
+        isPrimary: false,
+        type: (l as any).type || 'TRUST'
       }));
 
-    // 3. Generar Mapa de Hijos y detectar Enlaces Cruzados
+    // 3. Generar Mapa de Hijos y detectar Enlaces Cruzados (Solo para Ciudadanos)
     const childrenMap = new Map<string, string[]>();
-    allSimNodes.forEach(n => childrenMap.set(n.id, []));
+    citizenNodes.forEach(n => childrenMap.set(n.id, []));
     
     const seenTargets = new Set<string>();
-    // Ordenamos para priorizar los enlaces de nivel más bajo (más cercanos al centro) como primarios
-    allSimLinks.sort((a, b) => a.level - b.level).forEach(l => {
-      if (!seenTargets.has(l.targetId)) {
-        l.isPrimary = true;
-        seenTargets.add(l.targetId);
-        childrenMap.get(l.sourceId)?.push(l.targetId);
-      } else {
-        l.isPrimary = false;
-      }
-    });
+    allSimLinks
+      .filter(l => l.type !== 'MEMBERSHIP' && citizenIds.has(l.sourceId) && citizenIds.has(l.targetId))
+      .sort((a, b) => a.level - b.level)
+      .forEach(l => {
+        if (!seenTargets.has(l.targetId)) {
+          l.isPrimary = true;
+          seenTargets.add(l.targetId);
+          childrenMap.get(l.sourceId)?.push(l.targetId);
+        } else {
+          l.isPrimary = false;
+        }
+      });
 
     // 4. Algoritmo de Estrella Fractal 360° (O(N)) sin físicas
     const nodeWeight = new Map<string, number>();
@@ -170,13 +175,13 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
     nodeMap.get(mainId)!.pos = { x: CENTER.x, y: CENTER.y };
     distributeStarNodes(mainId, { x: CENTER.x, y: CENTER.y }, 0, Math.PI * 2, 0);
 
-    // 4.5 Jiggle de Relajación (Micro-Físicas de Colisión para evitar amontonamientos perfectos)
+    // 4.5 Jiggle de Relajación (Solo para ciudadanos)
     const MIN_DIST = 25; 
     for (let iter = 0; iter < 3; iter++) {
-      for (let i = 0; i < allSimNodes.length; i++) {
-        for (let j = i + 1; j < allSimNodes.length; j++) {
-          const n1 = allSimNodes[i];
-          const n2 = allSimNodes[j];
+      for (let i = 0; i < citizenNodes.length; i++) {
+        for (let j = i + 1; j < citizenNodes.length; j++) {
+          const n1 = citizenNodes[i];
+          const n2 = citizenNodes[j];
           if (n1.level === 0 || n2.level === 0) continue; 
           
           const dx = n2.pos.x - n1.pos.x;
@@ -197,16 +202,69 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
     }
 
     let maxR = 0;
-    allSimNodes.forEach(n => {
+    citizenNodes.forEach(n => {
       const dx = n.pos.x - CENTER.x;
       const dy = n.pos.y - CENTER.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > maxR) maxR = dist;
     });
-    setBounds({ R: maxR + 50 });
 
-    setNodes([...allSimNodes]);
-    setLinks([...allSimLinks]);
+    // 5. Distribuir Provincias (LOD 2) en órbita externa
+    const provinceRadius = maxR + 380; // Órbita exterior ajustada para provincias de r=180
+    provinceNodes.forEach((prov, i) => {
+      const angle = (Math.PI * 2 * i) / provinceNodes.length;
+      prov.pos.x = CENTER.x + Math.cos(angle) * provinceRadius;
+      prov.pos.y = CENTER.y + Math.sin(angle) * provinceRadius;
+    });
+
+    setBounds({ R: provinceRadius + 150, citizenR: maxR + 50, provinceR: provinceRadius + 150 });
+
+    // Detectar o crear enlaces punteados blancos entre provincias que comparten ciudadanos
+    const provinceCitizenMap = new Map<string, Set<string>>();
+    allSimLinks
+      .filter(l => l.type === 'MEMBERSHIP')
+      .forEach(l => {
+        const provId = provinceNodes.some(p => p.id === l.sourceId) ? l.sourceId : l.targetId;
+        const citId = provId === l.sourceId ? l.targetId : l.sourceId;
+        if (!provinceCitizenMap.has(provId)) provinceCitizenMap.set(provId, new Set());
+        provinceCitizenMap.get(provId)?.add(citId);
+      });
+
+    const interProvinceLinks: MapLink[] = [];
+    for (let i = 0; i < provinceNodes.length; i++) {
+      for (let j = i + 1; j < provinceNodes.length; j++) {
+        const p1 = provinceNodes[i];
+        const p2 = provinceNodes[j];
+        const c1 = provinceCitizenMap.get(p1.id) || new Set();
+        const c2 = provinceCitizenMap.get(p2.id) || new Set();
+        
+        let sharesCitizen = false;
+        for (const citId of c1) {
+          if (c2.has(citId)) {
+            sharesCitizen = true;
+            break;
+          }
+        }
+
+        // Crear la línea de interconexión SOLO si comparten verdaderamente al menos un ciudadano
+        if (sharesCitizen) {
+          interProvinceLinks.push({
+            sourceId: p1.id,
+            targetId: p2.id,
+            p1: p1.pos,
+            p2: p2.pos,
+            level: -1,
+            color: '#ffffff',
+            isPrimary: false,
+            type: 'PROVINCE_INTERCONNECT' as any
+          });
+        }
+      }
+    }
+
+    const finalSimNodes = [...citizenNodes, ...provinceNodes];
+    setNodes(finalSimNodes);
+    setLinks([...allSimLinks, ...interProvinceLinks]);
     setIsLoading(false);
   }, [fullTopology]);
 

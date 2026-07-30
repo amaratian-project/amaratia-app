@@ -94,4 +94,37 @@ export class CitizenRepository implements ICitizenRepository {
       links: simLinks,
     };
   }
+
+  /**
+   * Crea una nueva provincia en la base de datos local y
+   * vincula al ciudadano principal como fundador/miembro.
+   */
+  async createProvince(name: string, description: string): Promise<void> {
+    const allCitizens = await database.collections.get('citizens').query().fetch();
+    const mainCit = allCitizens[0] as Citizen;
+    if (!mainCit) throw new Error("Ciudadano principal no encontrado.");
+
+    await database.write(async () => {
+      const provincesCollection = database.collections.get('provinces');
+      const membershipsCollection = database.collections.get('citizen_provinces');
+
+      // 1. Crear Provincia
+      const newProv = await provincesCollection.create((p: any) => {
+        // En un entorno real, aquí se generaría el shared key o nostr ID
+        p.pubkey = `prov_${Date.now()}`;
+        p.name = name;
+        p.description = description;
+        p.founderPubkey = mainCit.id;
+        p.status = 'ACTIVE';
+        p.isPublic = true;
+      });
+
+      // 2. Crear membresía (Fundador)
+      await membershipsCollection.create((m: any) => {
+        m.citizen.set(mainCit);
+        m.province.set(newProv);
+        m.role = 'FOUNDER'; // O 'MEMBER', dependiendo de tu dominio
+      });
+    });
+  }
 }

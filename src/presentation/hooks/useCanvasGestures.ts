@@ -13,11 +13,8 @@ enum GestureMode {
 }
 
 interface GesturesConfig {
-  bounds: { R: number };
+  bounds: { R: number, citizenR?: number, provinceR?: number };
   nodes: MapNode[];
-  currentLOD: number;
-  setCurrentLOD: (lod: number) => void;
-  animMode: any;
   handleNodePress: (node: MapNode) => void;
   closePanels: () => void;
 }
@@ -25,9 +22,6 @@ interface GesturesConfig {
 export const useCanvasGestures = ({
   bounds,
   nodes,
-  currentLOD,
-  setCurrentLOD,
-  animMode,
   handleNodePress,
   closePanels
 }: GesturesConfig) => {
@@ -46,17 +40,20 @@ export const useCanvasGestures = ({
   const MIN_SCALE = Math.max(0.05, Math.min(width, height) / (bounds.R * 2.5));
   const MAX_SCALE = 4.0;
 
+  // Calculamos las escalas ideales para que el árbol se ajuste exactamente en pantalla
+  const scaleLOD1 = Math.min(1.0, Math.min(width, height) / ((bounds.citizenR || bounds.R) * 2.2));
+  const scaleLOD2 = Math.min(1.0, Math.min(width, height) / ((bounds.provinceR || bounds.R) * 2.2));
+  const scaleLOD3 = Math.min(0.15, scaleLOD2 * 0.4); // Aún más lejos
+
   const goToLOD = (level: number) => {
-    setCurrentLOD(level);
+    translateX.value = withSpring(0);
+    translateY.value = withSpring(0);
     if (level === 1) {
-      scale.value = withSpring(1.0);
-      animMode.value = withTiming(1);
+      scale.value = withSpring(scaleLOD1);
     } else if (level === 2) {
-      scale.value = withSpring(0.4);
-      animMode.value = withTiming(2);
+      scale.value = withSpring(scaleLOD2);
     } else if (level === 3) {
-      scale.value = withSpring(0.15);
-      animMode.value = withTiming(3);
+      scale.value = withSpring(scaleLOD3);
     }
   };
 
@@ -70,8 +67,8 @@ export const useCanvasGestures = ({
     })
     .onUpdate((e) => {
       if (activeGesture.value !== GestureMode.PANNING) return;
-      const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 100);
-      const panLimitY = Math.max(0, bounds.R * scale.value - height / 2 + 100);
+      const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 150);
+      const panLimitY = Math.max(0, bounds.R * scale.value - width / 2 + 200);
       let nextX = savedTranslateX.value + e.translationX;
       let nextY = savedTranslateY.value + e.translationY;
 
@@ -85,8 +82,8 @@ export const useCanvasGestures = ({
     })
     .onEnd(() => {
       if (activeGesture.value !== GestureMode.PANNING) return;
-      const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 100);
-      const panLimitY = Math.max(0, bounds.R * scale.value - height / 2 + 100);
+      const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 150);
+      const panLimitY = Math.max(0, bounds.R * scale.value - width / 2 + 200);
       if (translateX.value > panLimitX) translateX.value = withSpring(panLimitX);
       if (translateX.value < -panLimitX) translateX.value = withSpring(-panLimitX);
       if (translateY.value > panLimitY) translateY.value = withSpring(panLimitY);
@@ -132,8 +129,8 @@ export const useCanvasGestures = ({
       if (scale.value < MIN_SCALE) finalScale = MIN_SCALE;
       if (scale.value > MAX_SCALE) finalScale = MAX_SCALE;
 
-      const panLimitX = Math.max(0, bounds.R * finalScale - width / 2 + 100);
-      const panLimitY = Math.max(0, bounds.R * finalScale - height / 2 + 100);
+      const panLimitX = Math.max(0, bounds.R * finalScale - width / 2 + 150);
+      const panLimitY = Math.max(0, bounds.R * finalScale - width / 2 + 200);
 
       let targetX = translateX.value;
       let targetY = translateY.value;
@@ -152,14 +149,9 @@ export const useCanvasGestures = ({
 
       if (targetX !== translateX.value) translateX.value = withSpring(targetX);
       if (targetY !== translateY.value) translateY.value = withSpring(targetY);
-
-      if (finalScale < 0.25 && currentLOD !== 3) {
-        runOnJS(goToLOD)(3);
-      } else if (finalScale >= 0.25 && finalScale < 0.6 && currentLOD !== 2) {
-        runOnJS(goToLOD)(2);
-      } else if (finalScale >= 0.6 && currentLOD !== 1) {
-        runOnJS(goToLOD)(1);
-      }
+      
+      // ELIMINADO: La lógica de thresholds que forzaba cambios de nivel abruptos.
+      // Ahora el usuario tiene control libre continuo.
     })
     .onFinalize(() => {
       if (activeGesture.value === GestureMode.PINCHING) activeGesture.value = GestureMode.NONE;
@@ -208,5 +200,5 @@ export const useCanvasGestures = ({
     ];
   });
 
-  return { composed, globalTransform, scale, translateX, translateY, goToLOD };
+  return { composed, globalTransform, scale, translateX, translateY, goToLOD, scales: { scaleLOD1, scaleLOD2, scaleLOD3 } };
 };

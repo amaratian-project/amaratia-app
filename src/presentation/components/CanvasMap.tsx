@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Platform, Text, Pressable } from 'react-native';
 import { Canvas, Group, useFont } from '@shopify/react-native-skia';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { useSharedValue, runOnJS, withSpring, withTiming, useAnimatedStyle, interpolate, Extrapolation, interpolateColor } from 'react-native-reanimated';
+import { useSharedValue, useDerivedValue, useAnimatedReaction, runOnJS, withSpring, withTiming, useAnimatedStyle, interpolate, Extrapolation, interpolateColor } from 'react-native-reanimated';
 import Animated from 'react-native-reanimated';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,8 +22,31 @@ import { FloatingDock } from './FloatingDock';
 import { ContextualBottomSheet } from './ContextualBottomSheet';
 import { CitizenProfileContent } from './CitizenProfileContent';
 import { ActionMenuContent } from './ActionMenuContent';
+import { CreateProvinceForm } from './CreateProvinceForm';
+import { ProvinceChatUI } from './ProvinceChatUI';
 
 const { width, height } = Dimensions.get('window');
+
+const LodSegmentButton = ({ item, animMode, selectedNode, onPress }: any) => {
+  const animStyle = useAnimatedStyle(() => {
+    let activeLevel = Math.round(animMode.value);
+    if (selectedNode.value) {
+      activeLevel = selectedNode.value.level === -1 ? 2 : 1;
+    }
+    const isActive = activeLevel === item.level;
+    return {
+      backgroundColor: isActive ? item.color : 'transparent',
+    };
+  });
+
+  return (
+    <Pressable onPress={onPress}>
+      <Animated.View style={[styles.lodSegment, animStyle]}>
+        <Text style={styles.lodSegmentIcon}>{item.icon}</Text>
+      </Animated.View>
+    </Pressable>
+  );
+};
 
 export const CanvasMap = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
@@ -54,39 +77,47 @@ export const CanvasMap = () => {
   // 3. UI State
   const [showQR, setShowQR] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showProvinceForm, setShowProvinceForm] = useState(false);
   const [currentLOD, setCurrentLOD] = useState(1);
   const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
   
-  const animMode = useSharedValue(1);
   const SCREEN_HEIGHT = Dimensions.get('window').height;
-  const panelTranslateY = useSharedValue(SCREEN_HEIGHT);
+  const animatedPosition = useSharedValue(SCREEN_HEIGHT);
+  const bottomSheetRef = React.useRef<any>(null); // We will type this as BottomSheet in imports
 
   const activeFocusState = useSharedValue<{ selected: string | null, connected: Record<string, boolean> }>({ selected: null, connected: {} });
   const focusTransition = useSharedValue(0);
+  const selectedNodeShared = useSharedValue<MapNode | null>(null);
+
+  useEffect(() => {
+    selectedNodeShared.value = selectedNode;
+  }, [selectedNode]);
 
   // 4. Panel Transitions
   useEffect(() => {
-    if (selectedNode || showActionMenu) {
-      panelTranslateY.value = withSpring(0, { damping: 20, stiffness: 200, mass: 0.8 });
+    if (selectedNode || showActionMenu || showProvinceForm) {
+      setTimeout(() => {
+        bottomSheetRef.current?.snapToIndex(0);
+      }, 50);
+    } else {
+      bottomSheetRef.current?.close();
     }
-  }, [selectedNode, showActionMenu, panelTranslateY]);
+  }, [selectedNode, showActionMenu, showProvinceForm]);
 
   const openActionMenu = () => {
-    if (!selectedNode && !showActionMenu) panelTranslateY.value = SCREEN_HEIGHT;
     setShowActionMenu(true);
+    setShowProvinceForm(false);
     setSelectedNode(null);
   };
 
   const closePanels = useCallback(() => {
-    panelTranslateY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, (finished) => {
-      if (finished) {
-        runOnJS(setShowActionMenu)(false);
-        runOnJS(setSelectedNode)(null);
-      }
-    });
+    bottomSheetRef.current?.close();
+    setShowActionMenu(false);
+    setShowProvinceForm(false);
+    setSelectedNode(null);
     activeFocusState.value = { selected: null, connected: {} };
     focusTransition.value = withTiming(0, { duration: 300 });
-  }, [panelTranslateY, SCREEN_HEIGHT, activeFocusState, focusTransition]);
+  }, [activeFocusState, focusTransition]);
 
   const handleNodePress = useCallback((node: MapNode) => {
     if (selectedNode?.id === node.id) {
@@ -102,24 +133,40 @@ export const CanvasMap = () => {
       activeFocusState.value = { selected: node.id, connected };
       focusTransition.value = withTiming(1, { duration: 300 });
 
-      if (!selectedNode && !showActionMenu) {
-        panelTranslateY.value = SCREEN_HEIGHT;
-      }
       setSelectedNode(node);
       setShowActionMenu(false);
+      setShowProvinceForm(false);
     }
-  }, [selectedNode, showActionMenu, panelTranslateY, SCREEN_HEIGHT, links, activeFocusState, focusTransition, closePanels]);
+  }, [selectedNode, links, activeFocusState, focusTransition, closePanels]);
 
   // 5. Gestures
-  const { composed, globalTransform, scale, goToLOD } = useCanvasGestures({
+  const { composed, globalTransform, scale, translateX, translateY, goToLOD, scales } = useCanvasGestures({
     bounds,
     nodes,
-    currentLOD,
-    setCurrentLOD,
-    animMode,
     handleNodePress,
     closePanels
   });
+
+  const animMode = useDerivedValue(() => {
+    // Math: scaleLOD3 -> 3, scaleLOD2 -> 2, scaleLOD1 -> 1
+    // By using CLAMP, if they zoom in past scaleLOD1, animMode stays at 1.
+    return interpolate(
+      scale.value,
+      [scales.scaleLOD3, scales.scaleLOD2, scales.scaleLOD1],
+      [3, 2, 1],
+      Extrapolation.CLAMP
+    );
+  });
+
+  // Actualizar HUD visualmente si animMode cambia significativamente
+  useAnimatedReaction(
+    () => Math.round(animMode.value),
+    (nextLOD, prevLOD) => {
+      if (nextLOD !== prevLOD && nextLOD >= 1 && nextLOD <= 3) {
+        runOnJS(setCurrentLOD)(nextLOD);
+      }
+    }
+  );
 
   const animatedBackground = useAnimatedStyle(() => {
     const bgColor = interpolateColor(
@@ -131,8 +178,18 @@ export const CanvasMap = () => {
   });
 
   const lodControlsStyle = useAnimatedStyle(() => {
+    // animatedPosition.value goes from SCREEN_HEIGHT (closed) to small numbers (open)
+    // We want the controls to sit exactly on top of the bottom sheet.
+    // So we translate Y by animatedPosition.value - SCREEN_HEIGHT.
+    // If closed (SCREEN_HEIGHT), translateY is 0.
+    // If open at Y=500 and SCREEN_HEIGHT is 800, translateY is -300 (goes up 300px).
+    // If animatedPosition is 0, it means the bottom sheet hasn't calculated its position yet.
+    const translateY = (showActionMenu || selectedNode || showProvinceForm) 
+      ? (animatedPosition.value > 0 && animatedPosition.value < SCREEN_HEIGHT ? animatedPosition.value - SCREEN_HEIGHT : 0)
+      : 0;
+    
     return {
-      transform: [{ translateY: (showActionMenu || selectedNode) ? panelTranslateY.value : 0 }]
+      transform: [{ translateY }]
     };
   });
 
@@ -158,6 +215,7 @@ export const CanvasMap = () => {
                   link={link} 
                   activeFocusState={activeFocusState} 
                   focusTransition={focusTransition} 
+                  animMode={animMode}
                 />
               ))}
               {nodes.map(node => (
@@ -166,6 +224,7 @@ export const CanvasMap = () => {
                   node={node} 
                   activeFocusState={activeFocusState} 
                   focusTransition={focusTransition} 
+                  animMode={animMode}
                 />
               ))}
               {nodes.map(node => (
@@ -176,6 +235,7 @@ export const CanvasMap = () => {
                   font={fontBold} 
                   activeFocusState={activeFocusState} 
                   focusTransition={focusTransition} 
+                  animMode={animMode}
                 />
               ))}
             </Group>
@@ -194,46 +254,71 @@ export const CanvasMap = () => {
               { level: 2, label: 'Provincias', icon: '🏛️', color: '#f59e0b' },
               { level: 1, label: 'Ciudadanos', icon: '👤', color: '#3b82f6' },
             ].map((item) => {
-              const isActive = currentLOD === item.level;
               return (
-                <Pressable key={item.level} onPress={() => goToLOD(item.level)} style={[styles.lodSegment, isActive && { backgroundColor: item.color }]}>
-                  <Text style={[styles.lodSegmentIcon, isActive && { opacity: 1 }]}>{item.icon}</Text>
-                </Pressable>
+                <LodSegmentButton
+                  key={item.level}
+                  item={item}
+                  animMode={animMode}
+                  selectedNode={selectedNodeShared}
+                  onPress={() => {
+                    setCurrentLOD(item.level);
+                    goToLOD(item.level);
+                  }}
+                />
               );
             })}
           </View>
         </Animated.View>
 
         {/* Panel Activo */}
-        <View style={{ width: '100%', pointerEvents: 'box-none' }}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           
-          <ContextualBottomSheet panelTranslateY={panelTranslateY} onClose={closePanels}>
-            <View>
-              {selectedNode && (
-                <CitizenProfileContent 
-                  citizen={selectedNode}
-                  onClose={closePanels}
-                  onViewProfile={() => {}}
-                  onUpdateLocalName={(newName) => {
-                    setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
-                    setSelectedNode({ ...selectedNode, localName: newName });
-                  }}
-                />
-              )}
-              {showActionMenu && (
-                <ActionMenuContent 
-                  onScanCitizen={() => {
-                    closePanels();
-                    navigation.navigate('Scanner' as never);
-                  }}
-                  onCreateProvince={() => {}}
-                />
-              )}
-            </View>
+          <ContextualBottomSheet 
+            ref={bottomSheetRef}
+            animatedPosition={animatedPosition} 
+            onClose={closePanels}
+            mode={selectedNode !== null && selectedNode.level === -1 ? 'province' : 'dynamic'}
+          >
+            {selectedNode && selectedNode.level !== -1 && (
+              <CitizenProfileContent 
+                citizen={selectedNode}
+                onClose={closePanels}
+                onViewProfile={() => {}}
+                onUpdateLocalName={(newName) => {
+                  setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
+                  setSelectedNode({ ...selectedNode, localName: newName });
+                }}
+              />
+            )}
+            {selectedNode && selectedNode.level === -1 && (
+              <ProvinceChatUI provinceId={selectedNode.id} provinceName={selectedNode.alias} />
+            )}
+            {showActionMenu && (
+              <ActionMenuContent 
+                onScanCitizen={() => {
+                  closePanels();
+                  navigation.navigate('Scanner' as never);
+                }}
+                onCreateProvince={() => {
+                  setShowActionMenu(false);
+                  setShowProvinceForm(true);
+                }}
+              />
+            )}
+            {showProvinceForm && (
+              <CreateProvinceForm
+                onClose={closePanels}
+                onSuccess={async () => {
+                  closePanels();
+                  const topology = await citizenRepository.getHydratedCitizens();
+                  setFullTopology(topology);
+                }}
+              />
+            )}
           </ContextualBottomSheet>
 
-          {!selectedNode && !showActionMenu && (
-            <View style={{ alignItems: 'center', paddingBottom: 30, pointerEvents: 'box-none' }}>
+          {!selectedNode && !showActionMenu && !showProvinceForm && (
+            <View style={{ position: 'absolute', bottom: 0, width: '100%', alignItems: 'center', paddingBottom: 30, pointerEvents: 'box-none' }}>
               <FloatingDock
                 onAddPress={openActionMenu}
                 onMessagePress={() => console.log('Mensajes')}

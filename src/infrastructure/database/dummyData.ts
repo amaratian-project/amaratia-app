@@ -126,26 +126,35 @@ export const injectDummyTopology = async () => {
 
       // Nivel 3: Provincias (Agrupando algunos ciudadanos)
       Logger.log('Generando 3 Provincias...');
-      const provinces = [];
+      const provinces: any[] = [];
       for (let i = 0; i < 3; i++) {
         const prov = await provincesCollection.create((p: any) => {
           p.pubkey = `npub_prov_${i}`;
           p.name = ['Gremio de Desarrolladores', 'Ministerio de Arte', 'Asamblea de Economía'][i];
           p.description = `Provincia simulada número ${i}`;
           p.founderPubkey = mainCitizen.id;
+          p.status = 'ACTIVE';
+          p.isPublic = true;
         });
         provinces.push(prov);
       }
 
-      // Asignar el 30% de los ciudadanos a provincias aleatorias
+      // Asignar ciudadanos a provincias (permitiendo que algunos pertenezcan a 2 provincias para generar cruces)
       for (const cit of [...level1Citizens, ...level2Citizens]) {
-        if (Math.random() < 0.3) {
-          const randomProv = provinces[Math.floor(Math.random() * provinces.length)];
-          await membershipsCollection.create((m: any) => {
-            m.citizen.set(cit);
-            m.province.set(randomProv);
-            m.role = 'MEMBER';
-          });
+        if (Math.random() < 0.4) {
+          const provCount = Math.random() < 0.35 ? 2 : 1; // 35% de probabilidad de pertenecer a 2 provincias
+          const assigned = new Set<number>();
+          for (let p = 0; p < provCount; p++) {
+            let provIdx = Math.floor(Math.random() * provinces.length);
+            if (!assigned.has(provIdx)) {
+              assigned.add(provIdx);
+              await membershipsCollection.create((m: any) => {
+                m.citizen.set(cit);
+                m.province.set(provinces[provIdx]);
+                m.role = 'MEMBER';
+              });
+            }
+          }
         }
       }
     });

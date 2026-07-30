@@ -18,4 +18,5 @@ export interface MapLink {
   level: number;
   color: string;
   isPrimary?: boolean;
+  type?: 'TRUST' | 'MEMBERSHIP';
 }

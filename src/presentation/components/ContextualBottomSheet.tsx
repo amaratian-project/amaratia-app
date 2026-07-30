@@ -1,62 +1,61 @@
-import React from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
-import Animated, { useAnimatedStyle, withSpring, runOnJS, SharedValue } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import React, { forwardRef, useMemo } from 'react';
+import { StyleSheet, Keyboard } from 'react-native';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SharedValue } from 'react-native-reanimated';
 
-type ContextualBottomSheetProps = {
+export type ContextualBottomSheetProps = {
   children: React.ReactNode;
-  panelTranslateY: SharedValue<number>;
   onClose: () => void;
+  animatedIndex?: SharedValue<number>;
+  animatedPosition?: SharedValue<number>;
+  mode?: 'chat' | 'province' | 'dynamic';
 };
 
-const SCREEN_HEIGHT = Dimensions.get('window').height;
+export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomSheetProps>(
+  ({ children, onClose, animatedIndex, animatedPosition, mode = 'dynamic' }, ref) => {
+    const insets = useSafeAreaInsets();
+    
+    // Snap points: 
+    // If chat mode: we snap exactly to 90%
+    // If province mode: snap to 25% and 90%
+    // If not: we use dynamic sizing.
+    const snapPoints = useMemo(() => {
+      if (mode === 'chat') return ['90%'];
+      if (mode === 'province') return ['25%', '90%'];
+      return undefined;
+    }, [mode]);
 
-export const ContextualBottomSheet = ({ children, panelTranslateY, onClose }: ContextualBottomSheetProps) => {
-  const insets = useSafeAreaInsets();
-
-  const panGesture = Gesture.Pan()
-    .onUpdate((event) => {
-      // Solo arrastrar hacia abajo por ahora
-      if (event.translationY > 0) {
-        panelTranslateY.value = event.translationY;
-      }
-    })
-    .onEnd((event) => {
-      // Ajustes del spring: más rápido y firme (stiffness alto, damping justo)
-      const springConfig = { damping: 20, stiffness: 200, mass: 0.8 };
-
-      if (event.translationY > 100 || event.velocityY > 600) {
-        panelTranslateY.value = withSpring(SCREEN_HEIGHT, { ...springConfig, velocity: event.velocityY }, () => {
-          runOnJS(onClose)();
-        });
-      } else {
-        panelTranslateY.value = withSpring(0, springConfig);
-      }
-    });
-
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateY: panelTranslateY.value }],
-    };
-  });
-
-  return (
-    <GestureDetector gesture={panGesture}>
-      <Animated.View style={[styles.sheetContainer, { paddingBottom: Math.max(insets.bottom, 20) }, animatedStyle]}>
-        {/* Barra superior de arrastre */}
-        <View style={styles.handleContainer}>
-          <View style={styles.handleBar} />
-        </View>
-        
-        {/* Contenido Inyectado */}
-        <View style={styles.contentContainer}>
-          {children}
-        </View>
-      </Animated.View>
-    </GestureDetector>
-  );
-};
+    return (
+      <BottomSheet
+        ref={ref}
+        index={mode === 'province' ? 0 : -1} // Empezar en 25% para provincia, cerrado para otros
+        snapPoints={snapPoints}
+        enableDynamicSizing={mode === 'dynamic'} // Autocalcula altura solo si es dynamic
+        enablePanDownToClose={true}
+        onClose={() => {
+          Keyboard.dismiss();
+          onClose();
+        }}
+        animatedIndex={animatedIndex}
+        animatedPosition={animatedPosition}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        handleIndicatorStyle={styles.handleBar}
+        backgroundStyle={styles.sheetContainer}
+      >
+        {mode !== 'dynamic' ? (
+          // Si es chat o province, dejamos que el hijo maneje su propio flex
+          children
+        ) : (
+          <BottomSheetView style={[styles.contentContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+            {children}
+          </BottomSheetView>
+        )}
+      </BottomSheet>
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   sheetContainer: {
@@ -68,19 +67,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 10,
     elevation: 20,
-    width: '100%',
-  },
-  handleContainer: {
-    alignItems: 'center',
-    paddingVertical: 15,
   },
   handleBar: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
     width: 40,
     height: 5,
-    backgroundColor: 'rgba(255,255,255,0.3)',
     borderRadius: 3,
   },
   contentContainer: {
     paddingHorizontal: 20,
+    paddingTop: 10,
   }
 });
