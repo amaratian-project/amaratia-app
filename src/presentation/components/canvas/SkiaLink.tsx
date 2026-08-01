@@ -18,14 +18,22 @@ export const SkiaLink = React.memo(({ link, activeFocusState, focusTransition, a
     const state = activeFocusState.value;
     const isConnectedToFocus = state.selected !== null && (!!state.connected[link.sourceId] && !!state.connected[link.targetId]);
 
+    const isCauseLink = (link as any).type === 'PROVINCE_TO_CAUSE';
     // Cálculo base de LOD
     let baseLODOpacity = 1;
     if (isConnectedToFocus && focusTransition.value > 0) {
       // Si el enlace conecta nodos del ecosistema seleccionado, permanece 100% visible en cualquier zoom!
       baseLODOpacity = 1.0;
+    } else if (isCauseLink) {
+      // Enlace Causa-Provincia: visible en LOD 3
+      baseLODOpacity = Math.max(0, Math.min(1, animMode.value - 2));
     } else if (link.type === 'MEMBERSHIP' || (link as any).type === 'PROVINCE_INTERCONNECT') {
-      // Enlaces de Provincia (membresía o interconexión): visibles solo en LOD >= 2
-      baseLODOpacity = Math.max(0, Math.min(1, animMode.value - 1));
+      // Enlaces de Provincia (membresía o interconexión):
+      if (animMode.value > 2) {
+        baseLODOpacity = 1.0 - (animMode.value - 2) * 0.8;
+      } else {
+        baseLODOpacity = Math.max(0, Math.min(1, (animMode.value - 1) * 2));
+      }
     } else {
       // Trust link: atenúa en LOD >= 2
       baseLODOpacity = animMode.value >= 2 ? 0.2 : 1.0 - (animMode.value - 1) * 0.8;
@@ -39,6 +47,7 @@ export const SkiaLink = React.memo(({ link, activeFocusState, focusTransition, a
   });
 
   const isInterconnect = (link as any).type === 'PROVINCE_INTERCONNECT';
+  const isCauseLink = (link as any).type === 'PROVINCE_TO_CAUSE';
   const isMembership = link.type === 'MEMBERSHIP';
 
   return (
@@ -47,16 +56,19 @@ export const SkiaLink = React.memo(({ link, activeFocusState, focusTransition, a
         p1={p1} 
         p2={p2} 
         color={
-          isInterconnect 
-            ? '#ffffffaa' 
-            : isMembership 
-              ? '#f59e0b88' 
-              : (link.isPrimary !== false ? `${link.color}33` : '#ffffff22')
+          isCauseLink
+            ? '#ec4899aa'
+            : isInterconnect 
+              ? '#ffffffaa' 
+              : isMembership 
+                ? '#f59e0b88' 
+                : (link.isPrimary !== false ? `${link.color}33` : '#ffffff22')
         } 
-        strokeWidth={isInterconnect ? 2 : (isMembership ? 3 : 2)}
+        strokeWidth={isCauseLink ? 3 : (isInterconnect ? 2 : (isMembership ? 3 : 2))}
       >
+        {isCauseLink && <DashPathEffect intervals={[8, 8]} />}
         {isInterconnect && <DashPathEffect intervals={[8, 8]} />}
-        {!isMembership && !isInterconnect && link.isPrimary === false && <DashPathEffect intervals={[4, 6]} />}
+        {!isMembership && !isInterconnect && !isCauseLink && link.isPrimary === false && <DashPathEffect intervals={[4, 6]} />}
       </Line>
     </Group>
   );

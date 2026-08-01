@@ -1,9 +1,10 @@
 import { Gesture } from 'react-native-gesture-handler';
-import { useSharedValue, useDerivedValue, withSpring, runOnJS, withTiming } from 'react-native-reanimated';
+import { useSharedValue, useDerivedValue, withSpring, withTiming, runOnJS, interpolate, Extrapolation } from 'react-native-reanimated';
 import { Dimensions } from 'react-native';
 import { MapNode } from '../../types/canvas';
 
 const { width, height } = Dimensions.get('window');
+const SCREEN_MIN = Math.min(width, height);
 
 enum GestureMode {
   NONE = 0,
@@ -13,7 +14,7 @@ enum GestureMode {
 }
 
 interface GesturesConfig {
-  bounds: { R: number, citizenR?: number, provinceR?: number };
+  bounds: { R: number; citizenR?: number; provinceR?: number; causeR?: number };
   nodes: MapNode[];
   handleNodePress: (node: MapNode) => void;
   closePanels: () => void;
@@ -37,23 +38,38 @@ export const useCanvasGestures = ({
 
   const activeGesture = useSharedValue(GestureMode.NONE);
 
-  const MIN_SCALE = Math.max(0.05, Math.min(width, height) / (bounds.R * 2.5));
+  const citR = bounds.citizenR || bounds.R * 0.3;
+  const provR = bounds.provinceR || bounds.R * 0.6;
+  const causeR = bounds.causeR || bounds.R;
+
+  // Escalas por nivel (LOD1: Ciudadanos = 1.0; LOD2: Provincias = medio; LOD3: Causas = vista global)
+  const scaleLOD1 = Math.max(0.7, Math.min(1.2, SCREEN_MIN / (citR * 1.8)));
+  const scaleLOD2 = Math.min(scaleLOD1 * 0.5, Math.max(0.18, SCREEN_MIN / (provR * 2.0)));
+  const scaleLOD3 = Math.min(scaleLOD2 * 0.4, Math.max(0.02, SCREEN_MIN / (causeR * 2.2)));
+
+  const MIN_SCALE = Math.max(0.01, scaleLOD3 * 0.7);
   const MAX_SCALE = 4.0;
 
-  // Calculamos las escalas ideales para que el árbol se ajuste exactamente en pantalla
-  const scaleLOD1 = Math.min(1.0, Math.min(width, height) / ((bounds.citizenR || bounds.R) * 2.2));
-  const scaleLOD2 = Math.min(1.0, Math.min(width, height) / ((bounds.provinceR || bounds.R) * 2.2));
-  const scaleLOD3 = Math.min(0.15, scaleLOD2 * 0.4); // Aún más lejos
+  // Radio activo según la escala actual (permite límites de arrastre progresivos por nivel)
+  const activeRadius = useDerivedValue(() => {
+    return interpolate(
+      scale.value,
+      [scaleLOD3, scaleLOD2, scaleLOD1],
+      [causeR, provR, citR],
+      Extrapolation.CLAMP
+    );
+  });
 
   const goToLOD = (level: number) => {
-    translateX.value = withSpring(0);
-    translateY.value = withSpring(0);
+    const config = { duration: 350 };
+    translateX.value = withTiming(0, config);
+    translateY.value = withTiming(0, config);
     if (level === 1) {
-      scale.value = withSpring(scaleLOD1);
+      scale.value = withTiming(scaleLOD1, config);
     } else if (level === 2) {
-      scale.value = withSpring(scaleLOD2);
+      scale.value = withTiming(scaleLOD2, config);
     } else if (level === 3) {
-      scale.value = withSpring(scaleLOD3);
+      scale.value = withTiming(scaleLOD3, config);
     }
   };
 
@@ -67,27 +83,28 @@ export const useCanvasGestures = ({
     })
     .onUpdate((e) => {
       if (activeGesture.value !== GestureMode.PANNING) return;
-      const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 150);
-      const panLimitY = Math.max(0, bounds.R * scale.value - width / 2 + 200);
+
+      // El límite de arrastre permite centrar el nodo más lejano del nivel activo sin perder nodos en pantalla
+      const panLimit = activeRadius.value * scale.value + 50;
       let nextX = savedTranslateX.value + e.translationX;
       let nextY = savedTranslateY.value + e.translationY;
 
-      if (nextX > panLimitX) nextX = panLimitX + (nextX - panLimitX) * 0.15;
-      if (nextX < -panLimitX) nextX = -panLimitX + (nextX + panLimitX) * 0.15;
-      if (nextY > panLimitY) nextY = panLimitY + (nextY - panLimitY) * 0.15;
-      if (nextY < -panLimitY) nextY = -panLimitY + (nextY + panLimitY) * 0.15;
+      // Resistencia elástica suave al sobrepasar los bordes del nivel
+      if (nextX > panLimit) nextX = panLimit + (nextX - panLimit) * 0.2;
+      if (nextX < -panLimit) nextX = -panLimit + (nextX + panLimit) * 0.2;
+      if (nextY > panLimit) nextY = panLimit + (nextY - panLimit) * 0.2;
+      if (nextY < -panLimit) nextY = -panLimit + (nextY + panLimit) * 0.2;
 
       translateX.value = nextX;
       translateY.value = nextY;
     })
     .onEnd(() => {
       if (activeGesture.value !== GestureMode.PANNING) return;
-      const panLimitX = Math.max(0, bounds.R * scale.value - width / 2 + 150);
-      const panLimitY = Math.max(0, bounds.R * scale.value - width / 2 + 200);
-      if (translateX.value > panLimitX) translateX.value = withSpring(panLimitX);
-      if (translateX.value < -panLimitX) translateX.value = withSpring(-panLimitX);
-      if (translateY.value > panLimitY) translateY.value = withSpring(panLimitY);
-      if (translateY.value < -panLimitY) translateY.value = withSpring(-panLimitY);
+      const panLimit = activeRadius.value * scale.value + 50;
+      if (translateX.value > panLimit) translateX.value = withSpring(panLimit, { damping: 18 });
+      if (translateX.value < -panLimit) translateX.value = withSpring(-panLimit, { damping: 18 });
+      if (translateY.value > panLimit) translateY.value = withSpring(panLimit, { damping: 18 });
+      if (translateY.value < -panLimit) translateY.value = withSpring(-panLimit, { damping: 18 });
     })
     .onFinalize(() => {
       if (activeGesture.value === GestureMode.PANNING) activeGesture.value = GestureMode.NONE;
@@ -108,7 +125,6 @@ export const useCanvasGestures = ({
       if (e.numberOfPointers < 2) return;
 
       let nextScale = savedScale.value * e.scale;
-      
       if (nextScale > MAX_SCALE) {
         nextScale = MAX_SCALE + (nextScale - MAX_SCALE) * 0.15;
       } else if (nextScale < MIN_SCALE) {
@@ -118,7 +134,6 @@ export const useCanvasGestures = ({
 
       const Px_start = originFocalX.value - width / 2;
       const Py_start = originFocalY.value - height / 2;
-
       const scaleRatio = nextScale / savedScale.value;
       translateX.value = savedTranslateX.value * scaleRatio + Px_start * (1 - scaleRatio);
       translateY.value = savedTranslateY.value * scaleRatio + Py_start * (1 - scaleRatio);
@@ -129,8 +144,7 @@ export const useCanvasGestures = ({
       if (scale.value < MIN_SCALE) finalScale = MIN_SCALE;
       if (scale.value > MAX_SCALE) finalScale = MAX_SCALE;
 
-      const panLimitX = Math.max(0, bounds.R * finalScale - width / 2 + 150);
-      const panLimitY = Math.max(0, bounds.R * finalScale - width / 2 + 200);
+      const panLimit = activeRadius.value * finalScale + 50;
 
       let targetX = translateX.value;
       let targetY = translateY.value;
@@ -139,19 +153,16 @@ export const useCanvasGestures = ({
         const R = finalScale / scale.value;
         targetX = translateX.value * R;
         targetY = translateY.value * R;
-        scale.value = withSpring(finalScale);
+        scale.value = withSpring(finalScale, { damping: 18 });
       }
 
-      if (targetX > panLimitX) targetX = panLimitX;
-      if (targetX < -panLimitX) targetX = -panLimitX;
-      if (targetY > panLimitY) targetY = panLimitY;
-      if (targetY < -panLimitY) targetY = -panLimitY;
+      if (targetX > panLimit) targetX = panLimit;
+      if (targetX < -panLimit) targetX = -panLimit;
+      if (targetY > panLimit) targetY = panLimit;
+      if (targetY < -panLimit) targetY = -panLimit;
 
-      if (targetX !== translateX.value) translateX.value = withSpring(targetX);
-      if (targetY !== translateY.value) translateY.value = withSpring(targetY);
-      
-      // ELIMINADO: La lógica de thresholds que forzaba cambios de nivel abruptos.
-      // Ahora el usuario tiene control libre continuo.
+      if (targetX !== translateX.value) translateX.value = withSpring(targetX, { damping: 18 });
+      if (targetY !== translateY.value) translateY.value = withSpring(targetY, { damping: 18 });
     })
     .onFinalize(() => {
       if (activeGesture.value === GestureMode.PINCHING) activeGesture.value = GestureMode.NONE;
@@ -164,20 +175,20 @@ export const useCanvasGestures = ({
       if (activeGesture.value !== GestureMode.NONE) return;
       const originX = width / 2;
       const originY = height / 2;
-      
+
       const touchX = (e.x - translateX.value - originX) / scale.value + originX;
       const touchY = (e.y - translateY.value - originY) / scale.value + originY;
 
       let foundNode = null;
       let minDistance = Infinity;
       const dynamicHitbox = 40 / scale.value;
-      
+
       for (const node of nodes) {
         const dx = node.pos.x - touchX;
         const dy = node.pos.y - touchY;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance <= dynamicHitbox && distance < minDistance) { 
+
+        if (distance <= dynamicHitbox && distance < minDistance) {
           minDistance = distance;
           foundNode = node;
         }

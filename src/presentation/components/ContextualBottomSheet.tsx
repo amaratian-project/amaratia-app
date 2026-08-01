@@ -9,29 +9,31 @@ export type ContextualBottomSheetProps = {
   onClose: () => void;
   animatedIndex?: SharedValue<number>;
   animatedPosition?: SharedValue<number>;
-  mode?: 'chat' | 'province' | 'dynamic';
+  mode?: string;
 };
 
 export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomSheetProps>(
   ({ children, onClose, animatedIndex, animatedPosition, mode = 'dynamic' }, ref) => {
     const insets = useSafeAreaInsets();
-    
-    // Snap points: 
-    // If chat mode: we snap exactly to 90%
-    // If province mode: snap to 25% and 90%
-    // If not: we use dynamic sizing.
+
     const snapPoints = useMemo(() => {
-      if (mode === 'chat') return ['90%'];
-      if (mode === 'province') return ['25%', '90%'];
-      return undefined;
+      switch (mode) {
+        case 'chat': return ['90%'];
+        case 'province': return ['25%', '50%', '90%'];
+        case 'citizen': return ['30%'];
+        case 'cause': return ['45%'];
+        case 'actionMenu': return ['30%'];
+        case 'provinceForm': return ['60%'];
+        default: return ['40%'];
+      }
     }, [mode]);
 
     return (
       <BottomSheet
         ref={ref}
-        index={mode === 'province' ? 0 : -1} // Empezar en 25% para provincia, cerrado para otros
+        index={-1}
         snapPoints={snapPoints}
-        enableDynamicSizing={mode === 'dynamic'} // Autocalcula altura solo si es dynamic
+        enableDynamicSizing={false} // Desactivamos dynamic sizing para máxima velocidad
         enablePanDownToClose={true}
         onClose={() => {
           Keyboard.dismiss();
@@ -44,14 +46,9 @@ export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomShe
         handleIndicatorStyle={styles.handleBar}
         backgroundStyle={styles.sheetContainer}
       >
-        {mode !== 'dynamic' ? (
-          // Si es chat o province, dejamos que el hijo maneje su propio flex
-          children
-        ) : (
-          <BottomSheetView style={[styles.contentContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-            {children}
-          </BottomSheetView>
-        )}
+        <BottomSheetView style={[styles.contentContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+          {children}
+        </BottomSheetView>
       </BottomSheet>
     );
   }

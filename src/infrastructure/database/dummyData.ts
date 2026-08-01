@@ -14,7 +14,7 @@ export const injectDummyTopology = async () => {
     const membershipsCollection = database.collections.get('citizen_provinces');
 
     const existingCitizens = await citizensCollection.query().fetchCount();
-    
+
     // Restauramos el límite a 350 para forzar un reset en tu próximo reload
     if (existingCitizens >= 350) {
       console.log('Topología masiva persistente cargada. Saltando inyección de dummy data.');
@@ -27,7 +27,7 @@ export const injectDummyTopology = async () => {
       const allLinks = await trustLinksCollection.query().fetch();
       const allCit = await citizensCollection.query().fetch();
       const mainCitId = allCit[0]?.id;
-      
+
       const recordsToDelete = [
         ...allLinks,
         ...allCit.filter((c: any) => c.id !== mainCitId)
@@ -80,11 +80,11 @@ export const injectDummyTopology = async () => {
           citizen.merit = Math.floor(Math.random() * 50);
         });
         level2Citizens.push(newCit);
-        
+
         // Power law: eleva a la 2 o 3 para que los primeros índices se elijan mucho más (Ramas superpobladas)
         const pIndex = Math.floor(Math.pow(Math.random(), 2.5) * level1Citizens.length);
         const parent = level1Citizens[pIndex];
-        
+
         await trustLinksCollection.create((link: any) => {
           link.fromCitizen.set(parent);
           link.toCitizen.set(newCit);

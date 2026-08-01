@@ -57,7 +57,7 @@ export class CitizenRepository implements ICitizenRepository {
 
     // Map para O(1)
     const citizenMap = new Map(allCitizens.map(c => [c.id, c as Citizen]));
-    
+
     // Ordenamos por nivel para procesar radialmente desde el centro
     const sortedLinks = allLinks.sort((a, b) => (a as any).level - (b as any).level);
 
@@ -82,15 +82,34 @@ export class CitizenRepository implements ICitizenRepository {
     allMemberships.forEach(m => {
       const citizenId = (m as any)._raw.citizen_id;
       const provinceId = (m as any)._raw.province_id;
-      
+
       if (citizenMapDomain.has(citizenId)) {
-        simLinks.push({ sourceId: provinceId, targetId: citizenId, level: -1, type: 'MEMBERSHIP' }); 
+        simLinks.push({ sourceId: provinceId, targetId: citizenId, level: -1, type: 'MEMBERSHIP' });
       }
+    });
+
+    // Agregar causas (Nivel 3 / LOD 3)
+    const causesList: any[] = [
+      { id: 'cause_1', title: 'Soberanía Energética', description: 'Red de micro-generación solar compartida', supportersCount: 142, status: 'ACTIVA', level: -2 },
+      { id: 'cause_2', title: 'Red Monetaria P2P', description: 'Infraestructura libre sin intermediarios bancarios', supportersCount: 389, status: 'EN Votación', level: -2 },
+      { id: 'cause_3', title: 'Gobernanza Libre', description: 'Decisiones distribuidas con firmas multifirma', supportersCount: 210, status: 'ACTIVA', level: -2 },
+    ];
+
+    // Conectar Provincias con Causas
+    provincesList.forEach((prov, i) => {
+      const targetCause = causesList[i % causesList.length];
+      simLinks.push({
+        sourceId: prov.id,
+        targetId: targetCause.id,
+        level: -2,
+        type: 'PROVINCE_TO_CAUSE'
+      });
     });
 
     return {
       citizens: Array.from(citizenMapDomain.values()),
       provinces: provincesList,
+      causes: causesList,
       links: simLinks,
     };
   }

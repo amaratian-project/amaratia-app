@@ -16,7 +16,8 @@ export const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focu
   if (!font) return null;
 
   const getRadius = (level: number) => {
-    if (level === -1) return 180;
+    if (level === -2) return 220;
+    if (level === -1) return 90;
     switch (level) {
       case 0: return 28;
       case 1: return 16;
@@ -25,7 +26,7 @@ export const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focu
     }
   };
   const nodeRadius = getRadius(node.level);
-  const fontScale = node.level === -1 ? 8.0 : 1;
+  const fontScale = node.level === -2 ? 6.0 : (node.level === -1 ? 4.0 : 1);
   const displayName = node.localName || node.alias;
 
   const finalOpacity = useDerivedValue(() => {
@@ -33,12 +34,17 @@ export const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focu
     const isConnectedToFocus = state.selected !== null && (state.selected === node.id || !!state.connected[node.id]);
 
     let baseZoomOpacity = 1;
-    
+
     if (isConnectedToFocus && focusTransition.value > 0) {
       baseZoomOpacity = 1.0;
+    } else if (node.level === -2) {
+      baseZoomOpacity = Math.max(0, Math.min(1, (animMode.value - 2) * 2));
     } else if (node.level === -1) {
-      // Provincia: se basa puramente en animMode para desvanecerse suavemente al entrar/salir de Nivel 2
-      baseZoomOpacity = Math.max(0, Math.min(1, animMode.value - 1));
+      if (animMode.value > 2) {
+        baseZoomOpacity = 1.0 - (animMode.value - 2) * 0.8;
+      } else {
+        baseZoomOpacity = Math.max(0, Math.min(1, (animMode.value - 1) * 2));
+      }
     } else {
       // Ciudadano: Desaparece completamente si pasamos a Nivel 2 (animMode >= 2)
       // En Nivel 1, también desaparece si el zoom es muy pequeño para evitar amontonamiento de texto
@@ -49,12 +55,12 @@ export const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focu
     }
 
     if (baseZoomOpacity === 0) return 0;
-    
+
     if (!state.selected) return baseZoomOpacity;
-    
+
     const isDimmed = !isConnectedToFocus;
     const focusMultiplier = isDimmed ? 1 - (0.85 * focusTransition.value) : 1;
-    
+
     return baseZoomOpacity * focusMultiplier;
   });
 
@@ -64,8 +70,8 @@ export const NodeLabel = React.memo(({ node, scale, font, activeFocusState, focu
   return (
     <Group transform={transform} opacity={finalOpacity}>
       <Group transform={[{ scale: fontScale }]}>
-        <SkiaText x={-textWidth/2} y={1} text={displayName} font={font} color="rgba(0, 0, 0, 0.8)" />
-        <SkiaText x={-textWidth/2} y={0} text={displayName} font={font} color="rgba(255, 255, 255, 0.7)" />
+        <SkiaText x={-textWidth / 2} y={1} text={displayName} font={font} color="rgba(0, 0, 0, 0.8)" />
+        <SkiaText x={-textWidth / 2} y={0} text={displayName} font={font} color="rgba(255, 255, 255, 0.7)" />
       </Group>
     </Group>
   );

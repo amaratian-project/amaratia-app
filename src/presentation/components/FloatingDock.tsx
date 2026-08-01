@@ -55,7 +55,6 @@ const styles = StyleSheet.create({
   dockWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 100,
     width: '100%',
   },
   dockContainer: {
