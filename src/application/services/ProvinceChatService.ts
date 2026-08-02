@@ -9,6 +9,11 @@ function toNostrHexId(id: string): string {
   return crypto.createHash('sha256').update(id).digest('hex');
 }
 
+function deriveProvincePrivKey(provinceIdHex: string): Uint8Array {
+  const hash = crypto.createHash('sha256').update(`AMARATIA_PROVINCE_${provinceIdHex}`).digest();
+  return new Uint8Array(hash);
+}
+
 export interface ChatMessage {
   id: string;
   senderAlias: string;
@@ -19,35 +24,31 @@ export interface ChatMessage {
 
 export class ProvinceChatService {
   private adapter = new NostrAdapter();
-  // En un entorno real, la llave compartida (shared key) de la provincia
-  // estaría guardada de forma segura en la base de datos (WatermelonDB).
-  // Para MVP, derivamos una llave determinista basada en el ID de la provincia
-  // o usamos una constante para pruebas.
   
   /**
    * Suscribe a los mensajes de la provincia.
    */
   subscribeToProvinceChat(provinceId: string, onMessage: (msg: ChatMessage) => void) {
     const hexProvinceId = toNostrHexId(provinceId);
+    const provincePrivKey = deriveProvincePrivKey(hexProvinceId);
     
     // Usamos el tag #e con el hexProvinceId válido para Nostr
     const subscription = this.adapter.subscribe([{
-      kinds: [4], // Usando kind 4 (NIP-04) adaptado para el MVP
+      kinds: [4], // NIP-04 encrypted direct messages
       '#e': [hexProvinceId]
     }], async (event: any) => {
       try {
-        // En un caso real:
-        // const decryptedContent = await nip04.decrypt(sharedPrivKey, event.pubkey, event.content);
-        
-        // Simulación de desencriptación MVP
-        const content = event.content.startsWith('ENC:') 
-          ? event.content.replace('ENC:', '') 
-          : event.content;
+        let content = event.content;
+        try {
+          content = await nip04.decrypt(provincePrivKey, event.pubkey, event.content);
+        } catch {
+          // Si el mensaje es plano (legacy), mostramos el contenido original
+        }
           
         onMessage({
           id: event.id,
           senderPubkey: event.pubkey,
-          senderAlias: `Ciudadano ${event.pubkey.slice(0, 4)}`, // En la vida real, lo sacamos del repositorio
+          senderAlias: `Ciudadano ${event.pubkey.slice(0, 4)}`,
           content,
           timestamp: event.created_at * 1000,
         });
@@ -67,17 +68,19 @@ export class ProvinceChatService {
   async sendMessage(provinceId: string, text: string, userPrivKeyHex?: string) {
     const hexProvinceId = toNostrHexId(provinceId);
     const privKey = userPrivKeyHex 
-      ? Buffer.from(userPrivKeyHex, 'hex') 
+      ? new Uint8Array(Buffer.from(userPrivKeyHex, 'hex'))
       : generateSecretKey();
 
-    // Simulación de encriptación MVP usando el shared key
-    // const encryptedText = await nip04.encrypt(privKey, provinceSharedPubKey, text);
-    const encryptedText = `ENC:${text}`; // Mock para no bloquear UI con fallas criptográficas si falta la librería
+    const provincePrivKey = deriveProvincePrivKey(hexProvinceId);
+    const provincePubKey = getPublicKey(provincePrivKey);
+
+    // Cifrado NIP-04 real
+    const encryptedText = await nip04.encrypt(privKey, provincePubKey, text);
 
     const eventTemplate = {
       kind: 4,
       created_at: Math.floor(Date.now() / 1000),
-      tags: [['e', hexProvinceId]], // Etiquetamos la provincia con un hex ID de 64 caracteres válido
+      tags: [['e', hexProvinceId]],
       content: encryptedText,
     };
 

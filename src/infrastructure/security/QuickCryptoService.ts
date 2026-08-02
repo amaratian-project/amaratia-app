@@ -3,8 +3,8 @@ import { Buffer } from 'buffer';
 import { ICryptoService, EncryptedData } from '../../domain/security/ICryptoService';
 
 export class QuickCryptoService implements ICryptoService {
-  // NOTA: Reducimos a 1000 solo para el modo DEBUG del MVP. En producción debe ser 100,000+
-  private readonly ITERATIONS = 1000;
+  // Aumentado a 600,000 iteraciones según recomendaciones de seguridad OWASP (PBKDF2-HMAC-SHA256)
+  private readonly ITERATIONS = 600000;
   private readonly KEY_LENGTH = 32; // 256 bits
 
   /**

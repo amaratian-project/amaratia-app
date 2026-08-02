@@ -4,6 +4,7 @@ import { StyleSheet, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+// @ts-ignore
 import './global.css';
 import { AppNavigator } from './src/presentation/navigation/AppNavigator';
 import { AuthProvider } from './src/application/context/AuthContext';

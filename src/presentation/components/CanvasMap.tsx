@@ -8,6 +8,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useDependencies } from '../../application/context/DependencyContext';
+import { useAuth } from '../../application/context/AuthContext';
+import { IdentityUseCase } from '../../use-cases/IdentityUseCase';
 import { GraphTopology } from '../../domain/models/GraphTopology';
 
 import { MapNode } from '../../types/canvas';
@@ -55,7 +57,15 @@ export const CanvasMap = () => {
   const fontBold = useFont(require('../../../assets/Modelica-Bold.ttf'), 14);
 
   const { citizenRepository } = useDependencies();
+  const { identity } = useAuth();
   const [fullTopology, setFullTopology] = useState<GraphTopology | null>(null);
+
+  const activeIdentity = React.useMemo(() => {
+    if (identity) return identity;
+    const identityUseCase = new IdentityUseCase();
+    const mnemonic = identityUseCase.generateMnemonic();
+    return { ...identityUseCase.deriveKeysFromMnemonic(mnemonic), alias: 'Ciudadano (Dev)' };
+  }, [identity]);
 
   // 1. Data Fetching
   useEffect(() => {
@@ -336,10 +346,10 @@ export const CanvasMap = () => {
         </View>
       </View>
 
-      {showQR && (
+      {showQR && activeIdentity && (
         <View style={StyleSheet.absoluteFill}>
           <QRGenerator
-            identity={{ nsec: '***REMOVED_SECRET***', alias: 'Aurelio (Dev)' } as any}
+            identity={activeIdentity}
             onClose={() => setShowQR(false)}
           />
         </View>

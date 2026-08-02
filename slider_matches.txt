@@ -1,7 +1,0 @@
-  const [nodeLimit, setNodeLimit] = useState(300);
-  const [sliderVal, setSliderVal] = useState(300);
-      const allSimNodes = Array.from(nodeMap.values()).slice(0, nodeLimit);
-  }, [fullTopology, nodeLimit]);
-      runOnJS(setSliderVal)(newVal);
-        <Text style={{ color: 'white', marginBottom: 5 }}>Nodos: {sliderVal}</Text>
-            <View style={{ width: (sliderVal / 300) * 200, height: 40, backgroundColor: '#06b6d4', opacity: 0.5 }} />
