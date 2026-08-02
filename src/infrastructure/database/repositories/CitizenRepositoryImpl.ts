@@ -1,10 +1,13 @@
-import { database } from '../../infrastructure/database';
-import Citizen from '../../infrastructure/database/Citizen';
-import { UnifiedCitizenProfile } from '../models/Citizen';
-import { ICitizenRepository } from './ICitizenRepository';
-import { GraphTopology } from '../models/GraphTopology';
+import { database } from '../index';
+import Citizen from '../Citizen';
+import { UnifiedCitizenProfile } from '../../../domain/models/Citizen';
+import { ICitizenRepository } from '../../../domain/repositories/ICitizenRepository';
+import { GraphTopology } from '../../../domain/models/GraphTopology';
+import { Province } from '../../../domain/models/Province';
+import { TrustLink } from '../../../domain/models/TrustLink';
+import { Cause } from '../../../domain/models/Cause';
 
-export class CitizenRepository implements ICitizenRepository {
+export class CitizenRepositoryImpl implements ICitizenRepository {
   /**
    * Obtiene la red de ciudadanos hidratada, fusionando los datos públicos de la red 
    * con los datos locales (privados) del dispositivo para mantener la separación SOLID.
@@ -16,8 +19,8 @@ export class CitizenRepository implements ICitizenRepository {
     const allMemberships = await database.collections.get('citizen_provinces').query().fetch();
 
     const citizensList: UnifiedCitizenProfile[] = [];
-    const provincesList: any[] = []; // Using any for WatermelonDB models temporarily
-    const simLinks: any[] = []; // We will map this to TrustLink
+    const provincesList: Province[] = [];
+    const simLinks: TrustLink[] = [];
 
     const mainCit = allCitizens[0] as Citizen;
     if (!mainCit) return { citizens: [], provinces: [], links: [] };
@@ -58,8 +61,8 @@ export class CitizenRepository implements ICitizenRepository {
     // Map para O(1)
     const citizenMap = new Map(allCitizens.map(c => [c.id, c as Citizen]));
 
-    // Ordenamos por nivel para procesar radialmente desde el centro
-    const sortedLinks = allLinks.sort((a, b) => (a as any).level - (b as any).level);
+    // Ordenamos por nivel usando una copia no mutable para respetar inmutabilidad de ORM
+    const sortedLinks = [...allLinks].sort((a, b) => (a as any).level - (b as any).level);
 
     sortedLinks.forEach((link) => {
       const sourceId = (link as any)._raw.from_citizen_id;
@@ -89,7 +92,7 @@ export class CitizenRepository implements ICitizenRepository {
     });
 
     // Agregar causas (Nivel 3 / LOD 3)
-    const causesList: any[] = [
+    const causesList: Cause[] = [
       { id: 'cause_1', title: 'Soberanía Energética', description: 'Red de micro-generación solar compartida', supportersCount: 142, status: 'ACTIVA', level: -2 },
       { id: 'cause_2', title: 'Red Monetaria P2P', description: 'Infraestructura libre sin intermediarios bancarios', supportersCount: 389, status: 'EN Votación', level: -2 },
       { id: 'cause_3', title: 'Gobernanza Libre', description: 'Decisiones distribuidas con firmas multifirma', supportersCount: 210, status: 'ACTIVA', level: -2 },

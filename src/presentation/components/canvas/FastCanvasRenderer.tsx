@@ -1,27 +1,27 @@
 import React, { useMemo } from 'react';
-import { Group, Path, Circle, SkFont, Skia, PaintStyle } from '@shopify/react-native-skia';
+import { Group, Path, Circle, SkFont, Skia, PaintStyle, SkPath } from '@shopify/react-native-skia';
 import { SharedValue, useDerivedValue, interpolate, Extrapolation } from 'react-native-reanimated';
 import { MapNode, MapLink } from '../../../types/canvas';
 
 export const PALETTE_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#94a3b8'];
 
 export interface OverlayClusterPaths {
-  linksCause: any;
-  linksInter: any;
-  linksMemb: any;
-  linksCross: any;
-  linksPrimary: Record<string, any>;
+  linksCause: SkPath;
+  linksInter: SkPath;
+  linksMemb: SkPath;
+  linksCross: SkPath;
+  linksPrimary: Record<string, SkPath>;
 
-  halos1: Record<string, any>;
-  halos2: Record<string, any>;
-  bodies: Record<string, any>;
+  halos1: Record<string, SkPath>;
+  halos2: Record<string, SkPath>;
+  bodies: Record<string, SkPath>;
 
-  strokesL0: any;
-  strokesLN1: any;
-  strokesLN2: any;
+  strokesL0: SkPath;
+  strokesLN1: SkPath;
+  strokesLN2: SkPath;
 
-  texts: any;
-  textsShadow: any;
+  texts: SkPath;
+  textsShadow: SkPath;
 
   selectedNode: {
     x: number;

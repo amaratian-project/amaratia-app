@@ -1,3 +1,4 @@
+import { IRelayClient } from '../../domain/network/IRelayClient';
 import { NostrAdapter } from '../../infrastructure/network/NostrAdapter';
 import { finalizeEvent, generateSecretKey, nip04, getPublicKey } from 'nostr-tools';
 import crypto from 'react-native-quick-crypto';
@@ -23,7 +24,7 @@ export interface ChatMessage {
 }
 
 export class ProvinceChatService {
-  private adapter = new NostrAdapter();
+  constructor(private adapter: IRelayClient = new NostrAdapter()) {}
   
   /**
    * Suscribe a los mensajes de la provincia.

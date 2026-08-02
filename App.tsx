@@ -9,11 +9,11 @@ import './global.css';
 import { AppNavigator } from './src/presentation/navigation/AppNavigator';
 import { AuthProvider } from './src/application/context/AuthContext';
 import { DependencyProvider } from './src/application/context/DependencyContext';
-import { CitizenRepository } from './src/domain/repositories/CitizenRepository';
+import { CitizenRepositoryImpl } from './src/infrastructure/database/repositories/CitizenRepositoryImpl';
 import { injectDummyTopology } from './src/infrastructure/database/dummyData';
 
 const dependencies = {
-  citizenRepository: new CitizenRepository(),
+  citizenRepository: new CitizenRepositoryImpl(),
 };
 
 const darkTheme = {

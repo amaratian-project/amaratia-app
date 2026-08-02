@@ -4,7 +4,7 @@
     "src/domain",
     "src/infrastructure",
     "src/presentation",
-    "src/use-cases"
+    "src/application"
   ],
   "entryPointStrategy": "expand",
   "out": "docs/api",

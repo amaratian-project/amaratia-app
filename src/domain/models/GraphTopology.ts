@@ -1,15 +1,7 @@
 import { UnifiedCitizenProfile } from './Citizen';
 import { Province } from './Province';
 import { TrustLink } from './TrustLink';
-
-export interface Cause {
-  id: string;
-  title: string;
-  description: string;
-  supportersCount: number;
-  status: string;
-  level: number;
-}
+import { Cause } from './Cause';
 
 export interface GraphTopology {
   citizens: UnifiedCitizenProfile[];

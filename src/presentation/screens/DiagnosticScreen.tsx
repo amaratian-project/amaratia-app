@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { database } from '../../infrastructure/database';
-import { IdentityUseCase } from '../../use-cases/IdentityUseCase';
+import { IdentityUseCase } from '../../application/use-cases/IdentityUseCase';
 import { QuickCryptoService } from '../../infrastructure/security/QuickCryptoService';
 
 interface TestResult {

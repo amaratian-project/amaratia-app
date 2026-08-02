@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
-import { IdentityUseCase } from '../../../use-cases/IdentityUseCase';
+import { IdentityUseCase } from '../../../application/use-cases/IdentityUseCase';
 import * as bip39 from '@scure/bip39';
 // @ts-ignore: module resolution for wordlist
 import { wordlist } from '@scure/bip39/wordlists/english';

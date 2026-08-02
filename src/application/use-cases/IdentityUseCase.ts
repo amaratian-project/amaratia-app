@@ -1,4 +1,4 @@
-import { IIdentityUseCase, KeyPair } from '../domain/identity/IIdentityUseCase';
+import { IIdentityUseCase, KeyPair } from '../../domain/identity/IIdentityUseCase';
 import { nip19, getPublicKey } from 'nostr-tools';
 import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
 // @ts-ignore: module resolution for wordlist

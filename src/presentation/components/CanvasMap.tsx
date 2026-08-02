@@ -9,12 +9,13 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useDependencies } from '../../application/context/DependencyContext';
 import { useAuth } from '../../application/context/AuthContext';
-import { IdentityUseCase } from '../../use-cases/IdentityUseCase';
+import { IdentityUseCase } from '../../application/use-cases/IdentityUseCase';
 import { GraphTopology } from '../../domain/models/GraphTopology';
 
 import { MapNode } from '../../types/canvas';
 import { useForceDirectedGraph } from '../hooks/useForceDirectedGraph';
 import { useCanvasGestures } from '../hooks/useCanvasGestures';
+import { useCanvasUIState } from '../hooks/useCanvasUIState';
 import { FastCanvasRenderer, getRadius, buildOverlayCluster } from './canvas/FastCanvasRenderer';
 import type { OverlayClusterPaths } from './canvas/FastCanvasRenderer';
 import { QRGenerator } from './QRGenerator';
@@ -27,6 +28,7 @@ import { ProvinceChatUI } from './ProvinceChatUI';
 import { CauseInfoContent } from './CauseInfoContent';
 
 const { width, height } = Dimensions.get('window');
+const SCREEN_HEIGHT = height;
 
 const LodSegmentButton = ({ item, animMode, onPress }: any) => {
   const animStyle = useAnimatedStyle(() => {
@@ -85,87 +87,26 @@ export const CanvasMap = () => {
     isLoading,
   } = useForceDirectedGraph(fullTopology);
 
-  // 3. UI State
-  const [showQR, setShowQR] = useState(false);
-  const [showActionMenu, setShowActionMenu] = useState(false);
-  const [showProvinceForm, setShowProvinceForm] = useState(false);
-  const [currentLOD, setCurrentLOD] = useState(1);
-  const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
-  const SCREEN_HEIGHT = Dimensions.get('window').height;
-  const animatedPosition = useSharedValue(SCREEN_HEIGHT);
-  const bottomSheetRef = React.useRef<any>(null);
-
-  const activeFocusState = useSharedValue<{ selected: string | null, connected: Record<string, boolean> }>({ selected: null, connected: {} });
-  const focusTransition = useSharedValue(0);
-  const overlayClusterData = useSharedValue<OverlayClusterPaths | null>(null);
-  const selectedNodeShared = useSharedValue<MapNode | null>(null);
-
-  useEffect(() => {
-    selectedNodeShared.value = selectedNode;
-  }, [selectedNode]);
-
-  // 4. Panel Transitions
-  useEffect(() => {
-    if (selectedNode || showActionMenu || showProvinceForm) {
-      bottomSheetRef.current?.snapToIndex(0);
-    } else {
-      bottomSheetRef.current?.close();
-    }
-  }, [selectedNode, showActionMenu, showProvinceForm]);
-
-  const openActionMenu = () => {
-    setShowActionMenu(true);
-    setShowProvinceForm(false);
-    setSelectedNode(null);
-  };
-
-  const clearSelectionState = useCallback(() => {
-    setSelectedNode(null);
-  }, []);
-
-  const closePanels = useCallback(() => {
-    bottomSheetRef.current?.close();
-    setShowActionMenu(false);
-    setShowProvinceForm(false);
-    // Animar focusTransition a 0. Al terminar, limpiar el overlay y el estado de foco.
-    focusTransition.value = withTiming(0, { duration: 200 }, (finished) => {
-      if (finished) {
-        overlayClusterData.value = null;
-        activeFocusState.value = { selected: null, connected: {} };
-        runOnJS(clearSelectionState)();
-      }
-    });
-  }, [activeFocusState, focusTransition, overlayClusterData, clearSelectionState]);
-
-  const handleNodePress = useCallback((node: MapNode) => {
-    if (selectedNode?.id === node.id) {
-      closePanels();
-    } else {
-      Vibration.vibrate(50);
-      const connected: Record<string, boolean> = {};
-      connected[node.id] = true;
-      links.forEach(l => {
-        if (l.sourceId === node.id) connected[l.targetId] = true;
-        if (l.targetId === node.id) connected[l.sourceId] = true;
-      });
-
-      // ═══════════════════════════════════════════════════════════
-      // CRÍTICO: Generar paths de toda la rama (nodo, vecinos,
-      // enlaces, halos) de forma síncrona (< 0.05ms) y setear
-      // el SharedValue en el MISMO fotograma que focusTransition.
-      // CERO dependencia del ciclo de render de React.
-      // ═══════════════════════════════════════════════════════════
-      const clusterPaths = buildOverlayCluster(node, nodes, links, fontBold);
-      activeFocusState.value = { selected: node.id, connected };
-      overlayClusterData.value = clusterPaths;
-      focusTransition.value = withTiming(1, { duration: 250 });
-
-      // Estado React (async, solo afecta al bottom sheet / paneles)
-      setSelectedNode(node);
-      setShowActionMenu(false);
-      setShowProvinceForm(false);
-    }
-  }, [selectedNode, nodes, links, fontBold, activeFocusState, focusTransition, overlayClusterData, closePanels]);
+  // 3. UI State Hook
+  const {
+    showQR,
+    setShowQR,
+    showActionMenu,
+    setShowActionMenu,
+    showProvinceForm,
+    setShowProvinceForm,
+    currentLOD,
+    setCurrentLOD,
+    selectedNode,
+    setSelectedNode,
+    animatedPosition,
+    bottomSheetRef,
+    focusTransition,
+    overlayClusterData,
+    openActionMenu,
+    closePanels,
+    handleNodePress,
+  } = useCanvasUIState({ nodes, links, fontBold });
 
   // 5. Gestures
   const { composed, globalTransform, scale, translateX, translateY, goToLOD, scales } = useCanvasGestures({

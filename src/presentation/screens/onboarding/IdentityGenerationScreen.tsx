@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
-import { IdentityUseCase } from '../../../use-cases/IdentityUseCase';
+import { IdentityUseCase } from '../../../application/use-cases/IdentityUseCase';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'IdentityGeneration'>;

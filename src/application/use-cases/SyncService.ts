@@ -1,7 +1,7 @@
-import { IRelayClient, P2PEvent } from '../domain/network/IRelayClient';
+import { IRelayClient, P2PEvent } from '../../domain/network/IRelayClient';
 import { Database } from '@nozbe/watermelondb';
-import { Logger } from '../infrastructure/telemetry/Logger';
-import { TicketData } from '../types';
+import { Logger } from '../../infrastructure/telemetry/Logger';
+import { TicketData } from '../../types';
 
 export class SyncService {
   constructor(
