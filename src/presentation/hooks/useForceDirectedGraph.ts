@@ -16,6 +16,9 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
   useEffect(() => {
     if (!fullTopology) return;
 
+    // ═══════════════════════════════════════════════════════════════
+    // 1. CREAR NODOS DE MAPA (MapNode) A PARTIR DE LA TOPOLOGÍA
+    // ═══════════════════════════════════════════════════════════════
     const nodeMap = new Map<string, MapNode>();
 
     fullTopology.citizens.forEach(cit => {
@@ -23,6 +26,7 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
       nodeMap.set(cit.networkData.id, {
         id: cit.networkData.id,
         alias: cit.networkData.alias,
+        npub: cit.networkData.npub,
         localName: cit.localData?.localName,
         merit: cit.networkData.merit,
         pos: { x: 0, y: 0 },
@@ -40,7 +44,7 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
         localName: undefined,
         merit: 0,
         pos: { x: 0, y: 0 },
-        color: '#f59e0b', // Color ámbar para provincia
+        color: '#f59e0b',
         level: -1,
         vx: 0,
         vy: 0
@@ -55,7 +59,7 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
           localName: cause.description,
           merit: cause.supportersCount,
           pos: { x: 0, y: 0 },
-          color: '#ec4899', // Color magenta para Causas
+          color: '#ec4899',
           level: -2,
           vx: 0,
           vy: 0
@@ -69,7 +73,6 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
       return;
     }
 
-    // Iniciar al maestro en el centro ANTES de crear los links
     const mainId = mainNodes[0].networkData.id;
     nodeMap.get(mainId)!.pos.x = CENTER.x;
     nodeMap.get(mainId)!.pos.y = CENTER.y;
@@ -79,7 +82,9 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
     const causeNodes = Array.from(nodeMap.values()).filter(n => n.level === -2);
     const citizenIds = new Set(citizenNodes.map(n => n.id));
 
-    // Solo mapear todos los enlaces, pero los primarios (para el fractal) serán solo de ciudadanos
+    // ═══════════════════════════════════════════════════════════════
+    // 2. CREAR LINKS DE MAPA (MapLink) Y ADJACENCY LIST
+    // ═══════════════════════════════════════════════════════════════
     const allSimLinks: MapLink[] = fullTopology.links
       .filter(l => nodeMap.has(l.sourceId) && nodeMap.has(l.targetId))
       .map(l => ({
@@ -93,50 +98,98 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
         type: (l as any).type || 'TRUST'
       }));
 
-    // 3. Generar Mapa de Hijos y detectar Enlaces Cruzados (Solo para Ciudadanos)
+    // Construir adjacency list SOLO para citizen links (no membresía, no causas)
+    // Cada entrada: nodeId → [{neighborId, linkIndex}]
+    const citizenAdjacency = new Map<string, { neighborId: string; linkIdx: number }[]>();
+    citizenNodes.forEach(n => citizenAdjacency.set(n.id, []));
+
+    allSimLinks.forEach((link, idx) => {
+      if (link.type !== 'TRUST') return;
+      if (!citizenIds.has(link.sourceId) || !citizenIds.has(link.targetId)) return;
+
+      if (citizenAdjacency.has(link.sourceId)) {
+        citizenAdjacency.get(link.sourceId)!.push({ neighborId: link.targetId, linkIdx: idx });
+      }
+      if (citizenAdjacency.has(link.targetId)) {
+        citizenAdjacency.get(link.targetId)!.push({ neighborId: link.sourceId, linkIdx: idx });
+      }
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 3. BFS SPANNING TREE (libre de ciclos, O(N+E))
+    //    Cada nodo se descubre exactamente una vez.
+    //    Su primer descubridor es su padre en el spanning tree.
+    //    Los demás enlaces se dejan como isPrimary = false (cross-links).
+    // ═══════════════════════════════════════════════════════════════
     const childrenMap = new Map<string, string[]>();
     citizenNodes.forEach(n => childrenMap.set(n.id, []));
 
-    const seenTargets = new Set<string>();
-    allSimLinks
-      .filter(l => l.type !== 'MEMBERSHIP' && citizenIds.has(l.sourceId) && citizenIds.has(l.targetId))
-      .sort((a, b) => a.level - b.level)
-      .forEach(l => {
-        if (!seenTargets.has(l.targetId)) {
-          l.isPrimary = true;
-          seenTargets.add(l.targetId);
-          childrenMap.get(l.sourceId)?.push(l.targetId);
-        } else {
-          l.isPrimary = false;
-        }
-      });
+    const visited = new Set<string>([mainId]);
+    const bfsQueue: string[] = [mainId];
 
-    // 4. Algoritmo de Estrella Fractal 360° (O(N)) sin físicas
-    // Para calcular cuánto ángulo (tajada) recibe cada rama, usamos la RAÍZ CUADRADA de sus descendientes.
-    // Como las ramas se expanden en 2D (área), su ancho angular debe crecer con la raíz del área, no linealmente.
-    const rawCount = new Map<string, number>();
+    while (bfsQueue.length > 0) {
+      const parentId = bfsQueue.shift()!;
+      const neighbors = citizenAdjacency.get(parentId) || [];
+
+      for (const { neighborId, linkIdx } of neighbors) {
+        if (!visited.has(neighborId)) {
+          // Primera vez que descubrimos este nodo → es hijo de parentId
+          visited.add(neighborId);
+          childrenMap.get(parentId)!.push(neighborId);
+          allSimLinks[linkIdx].isPrimary = true;
+          bfsQueue.push(neighborId);
+        }
+        // Si ya fue visitado, el link queda como isPrimary = false (cross-link) → correcto
+      }
+    }
+
+    // Nodos huérfanos (desconectados del grafo principal) → atar al mainId
+    citizenNodes.forEach(n => {
+      if (!visited.has(n.id)) {
+        visited.add(n.id);
+        childrenMap.get(mainId)!.push(n.id);
+      }
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // 4. ALGORITMO DE ESTRELLA FRACTAL 360° (O(N))
+    //    Usa calculateDescendants iterativo para evitar stack overflow.
+    // ═══════════════════════════════════════════════════════════════
     const nodeWeight = new Map<string, number>();
 
-    const calculateDescendants = (nodeId: string): number => {
-      const children = childrenMap.get(nodeId) || [];
-      if (children.length === 0) {
-        rawCount.set(nodeId, 1);
-        nodeWeight.set(nodeId, 1);
-        return 1;
+    // Cálculo iterativo de descendientes (post-order DFS con stack explícito)
+    {
+      const stack: { id: string; phase: 'enter' | 'exit' }[] = [{ id: mainId, phase: 'enter' }];
+      const childIndex = new Map<string, number>();
+
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+
+        if (top.phase === 'enter') {
+          const children = childrenMap.get(top.id) || [];
+          if (children.length === 0) {
+            nodeWeight.set(top.id, 1);
+            stack.pop();
+          } else {
+            top.phase = 'exit';
+            childIndex.set(top.id, 0);
+            // Push children in reverse order so they process left-to-right
+            for (let i = children.length - 1; i >= 0; i--) {
+              stack.push({ id: children[i], phase: 'enter' });
+            }
+          }
+        } else {
+          // exit phase: all children have been computed
+          const children = childrenMap.get(top.id) || [];
+          let sum = 1; // count self
+          for (const childId of children) {
+            sum += (nodeWeight.get(childId) || 1);
+          }
+          nodeWeight.set(top.id, Math.sqrt(sum));
+          stack.pop();
+        }
       }
-      let sum = 1; // Contarse a sí mismo
-      children.forEach(childId => {
-        sum += calculateDescendants(childId);
-      });
-      rawCount.set(nodeId, sum);
-
-      // El peso angular es la raíz cuadrada de la cantidad total de nodos en esta rama
-      // Esto evita que las ramas masivas aplasten a los nodos pequeños, distribuyendo mejor el espacio vacío.
-      nodeWeight.set(nodeId, Math.sqrt(sum));
-
-      return sum;
-    };
-    calculateDescendants(mainId);
+    }
 
     const branchLengths: Record<number, number> = { 1: 300, 2: 100, 3: 40, 4: 30, 5: 30 };
 
@@ -149,47 +202,31 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
       const actualSweep = currentLevel === 0 ? Math.PI * 2 : sweepAngle;
       let currentAngleStart = currentLevel === 0 ? 0 : directionAngle - actualSweep / 2;
 
-      const useSunflower = false;
-
       children.forEach((childId, index) => {
         const childNode = nodeMap.get(childId);
         if (!childNode) return;
 
-        let finalAngle = 0;
-        let finalRadius = 0;
+        const weight = nodeWeight.get(childId) || 1;
+        const sliceAngle = (weight / totalWeight) * actualSweep;
 
-        if (useSunflower) {
-          const PHI = (1 + Math.sqrt(5)) / 2;
-          const GOLDEN_ANGLE = Math.PI * 2 * (1 - 1 / PHI);
+        const myAngleStart = currentAngleStart;
+        const myAngleEnd = currentAngleStart + sliceAngle;
 
-          finalAngle = directionAngle + (index * GOLDEN_ANGLE);
+        const baseCenterAngle = (myAngleStart + myAngleEnd) / 2;
+        const angleJitter = currentLevel > 0 ? Math.sin(index * 73) * (sliceAngle * 0.1) : 0;
+        const finalAngle = baseCenterAngle + angleJitter;
 
-          const c = currentLevel === 1 ? 25 : 15;
-          const startMargin = currentLevel === 1 ? 40 : 25;
-          finalRadius = startMargin + c * Math.sqrt(index + 1);
-        } else {
-          const weight = nodeWeight.get(childId) || 1;
-          const sliceAngle = (weight / totalWeight) * actualSweep;
-
-          const myAngleStart = currentAngleStart;
-          const myAngleEnd = currentAngleStart + sliceAngle;
-
-          const baseCenterAngle = (myAngleStart + myAngleEnd) / 2;
-          const angleJitter = currentLevel > 0 ? Math.sin(index * 73) * (sliceAngle * 0.1) : 0;
-          finalAngle = baseCenterAngle + angleJitter;
-
-          let baseRadius = branchLengths[currentLevel + 1] || 40;
-          if (currentLevel === 0) {
-            baseRadius = 250 + (index % 5) * 150;
-          } else if (currentLevel === 1) {
-            baseRadius = 120 + (index % 3) * 40;
-          }
-
-          const radiusStagger = currentLevel > 0 ? (index % 3 - 1) * 15 : 0;
-          finalRadius = baseRadius + radiusStagger;
-
-          currentAngleStart = myAngleEnd;
+        let baseRadius = branchLengths[currentLevel + 1] || 40;
+        if (currentLevel === 0) {
+          baseRadius = 250 + (index % 5) * 150;
+        } else if (currentLevel === 1) {
+          baseRadius = 120 + (index % 3) * 40;
         }
+
+        const radiusStagger = currentLevel > 0 ? (index % 3 - 1) * 15 : 0;
+        const finalRadius = baseRadius + radiusStagger;
+
+        currentAngleStart = myAngleEnd;
 
         childNode.pos.x = parentPos.x + Math.cos(finalAngle) * finalRadius;
         childNode.pos.y = parentPos.y + Math.sin(finalAngle) * finalRadius;
@@ -202,8 +239,9 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
     nodeMap.get(mainId)!.pos = { x: CENTER.x, y: CENTER.y };
     distributeStarNodes(mainId, { x: CENTER.x, y: CENTER.y }, 0, Math.PI * 2, 0);
 
-    // 4.5 Jiggle de Relajación (Membrana Magnética con Conciencia de Familia)
-    // Asignamos un "ID de Familia" a cada nodo (su ancestro de Nivel 1 - Nodo Azul)
+    // ═══════════════════════════════════════════════════════════════
+    // 4.5. JIGGLE DE RELAJACIÓN (Membrana Magnética)
+    // ═══════════════════════════════════════════════════════════════
     const familyMap = new Map<string, string>();
     const level1Nodes = childrenMap.get(mainId) || [];
 
@@ -228,7 +266,6 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
       }
     };
 
-    // Aplicamos un Jiggle que es permisivo internamente, pero muy repulsivo con extraños
     for (let iter = 0; iter < 10; iter++) {
       for (let i = 0; i < citizenNodes.length; i++) {
         for (let j = i + 1; j < citizenNodes.length; j++) {
@@ -244,8 +281,6 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
           const dy = n2.pos.y - n1.pos.y;
           const distSq = dx * dx + dy * dy;
 
-          // Si son de la misma familia, permitimos que se empaqueten densamente (margen 5px)
-          // Si son de familias distintas, actúan como imanes repelentes (margen 35px) creando una frontera.
           const padding = isSameFamily ? 25 : 50;
           const minDist = getCitizenRadius(n1.level) + getCitizenRadius(n2.level) + padding;
 
@@ -273,15 +308,15 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
       if (dist > maxR) maxR = dist;
     });
 
-    // 5. Distribuir Provincias (LOD 2) usando espiral botánica (Fermat/Sunflower)
+    // ═══════════════════════════════════════════════════════════════
+    // 5. DISTRIBUIR PROVINCIAS (LOD 2) - Espiral Fermat/Sunflower
+    // ═══════════════════════════════════════════════════════════════
     const PHI = (1 + Math.sqrt(5)) / 2;
     const GOLDEN_ANGLE = Math.PI * 2 * (1 - 1 / PHI);
 
     const LOD2Margin = 200;
     const baseProvinceRadius = maxR + LOD2Margin;
-    // El radio de una provincia es 180 (diámetro 360). Para evitar que se toquen,
-    // usamos c = Diámetro / sqrt(PI) + Margen => c aprox 240
-    const cProvince = 120; //margen entre provincias
+    const cProvince = 120;
     let maxProvinceR = baseProvinceRadius;
 
     provinceNodes.forEach((prov, i) => {
@@ -293,10 +328,11 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
       prov.pos.y = CENTER.y + Math.sin(angle) * r;
     });
 
-    // 6. Distribuir Causas (LOD 3) usando espiral botánica
+    // ═══════════════════════════════════════════════════════════════
+    // 6. DISTRIBUIR CAUSAS (LOD 3) - Espiral Fermat/Sunflower
+    // ═══════════════════════════════════════════════════════════════
     const LOD3Margin = 700;
     const baseCauseRadius = maxProvinceR + LOD3Margin;
-    // El radio de una causa es 220 (diámetro 440). c = 440 / 1.77 + Margen => c aprox 320
     const cCause = 320;
     let maxCauseR = baseCauseRadius;
 
@@ -311,7 +347,7 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
 
     setBounds({ R: maxCauseR + 500, citizenR: maxR + 100, provinceR: maxProvinceR + 250, causeR: maxCauseR + 300 });
 
-    // Detectar o crear enlaces punteados blancos entre provincias que comparten ciudadanos
+    // Detectar enlaces blancos entre provincias que comparten ciudadanos
     const provinceCitizenMap = new Map<string, Set<string>>();
     allSimLinks
       .filter(l => l.type === 'MEMBERSHIP')
@@ -338,7 +374,6 @@ export const useForceDirectedGraph = (fullTopology: GraphTopology | null) => {
           }
         }
 
-        // Crear la línea de interconexión SOLO si comparten verdaderamente al menos un ciudadano
         if (sharesCitizen) {
           interProvinceLinks.push({
             sourceId: p1.id,

@@ -61,12 +61,14 @@ export const PinSetupScreen = ({ navigation, route }: Props) => {
         });
 
 
-      // Opcional: También podríamos crear el registro público del ciudadano aquí,
-      // pero conceptualmente, la identidad ya está asegurada localmente.
+      // Registro del ciudadano: Inicia como Turista a menos que sea la llave Génesis
+      const { GENESIS_ARCHITECT_NPUB } = await import('../../../domain/models/Title');
+      const isGenesis = Boolean(GENESIS_ARCHITECT_NPUB && identity.npub === GENESIS_ARCHITECT_NPUB);
+
       const citizensCollection = database.collections.get('citizens');
       await citizensCollection.create((citizen: any) => {
         citizen.npub = identity.npub;
-        citizen.role = 'CITIZEN';
+        citizen.role = isGenesis ? 'CITIZEN' : 'TOURIST';
         citizen.merit = 0;
         citizen.alias = alias;
       });

@@ -1,6 +1,7 @@
 export interface MapNode {
   id: string;
   alias: string;
+  npub?: string;
   localName?: string;
   merit: number;
   pos: { x: number; y: number };

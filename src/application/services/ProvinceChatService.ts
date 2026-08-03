@@ -2,6 +2,7 @@ import { IRelayClient } from '../../domain/network/IRelayClient';
 import { NostrAdapter } from '../../infrastructure/network/NostrAdapter';
 import { finalizeEvent, generateSecretKey, nip04, getPublicKey } from 'nostr-tools';
 import crypto from 'react-native-quick-crypto';
+import { Buffer } from 'buffer';
 
 function toNostrHexId(id: string): string {
   if (/^[0-9a-fA-F]{64}$/.test(id)) {

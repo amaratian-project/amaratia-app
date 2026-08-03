@@ -1,12 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MapNode } from '../../types/canvas';
 
 type CauseInfoContentProps = {
   causeNode: MapNode;
+  onOpenChat?: () => void;
 };
 
-export const CauseInfoContent = ({ causeNode }: CauseInfoContentProps) => {
+export const CauseInfoContent = ({ causeNode, onOpenChat }: CauseInfoContentProps) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -37,6 +38,12 @@ export const CauseInfoContent = ({ causeNode }: CauseInfoContentProps) => {
           <Text style={styles.statLabel}>Estado</Text>
         </View>
       </View>
+
+      {onOpenChat && (
+        <TouchableOpacity style={styles.chatButton} onPress={onOpenChat}>
+          <Text style={styles.chatButtonText}>💬 Abrir Foro de la Causa</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -101,5 +108,17 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     color: '#94a3b8',
+  },
+  chatButton: {
+    marginTop: 15,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#0284c7',
+    alignItems: 'center',
+  },
+  chatButtonText: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
 });

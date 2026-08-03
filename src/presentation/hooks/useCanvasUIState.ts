@@ -15,6 +15,8 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
   const [showQR, setShowQR] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showProvinceForm, setShowProvinceForm] = useState(false);
+  const [showAlertsAndMessages, setShowAlertsAndMessages] = useState(false);
+  const [initialChatTarget, setInitialChatTarget] = useState<any>(null);
   const [currentLOD, setCurrentLOD] = useState(1);
   const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
 
@@ -35,15 +37,24 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
   }, [selectedNode, selectedNodeShared]);
 
   useEffect(() => {
-    if (selectedNode || showActionMenu || showProvinceForm) {
+    if (selectedNode || showActionMenu || showProvinceForm || showAlertsAndMessages) {
       bottomSheetRef.current?.snapToIndex(0);
     } else {
       bottomSheetRef.current?.close();
     }
-  }, [selectedNode, showActionMenu, showProvinceForm]);
+  }, [selectedNode, showActionMenu, showProvinceForm, showAlertsAndMessages]);
 
   const openActionMenu = useCallback(() => {
     setShowActionMenu(true);
+    setShowProvinceForm(false);
+    setShowAlertsAndMessages(false);
+    setSelectedNode(null);
+  }, []);
+
+  const openAlertsAndMessages = useCallback((target?: any) => {
+    setInitialChatTarget(target || null);
+    setShowAlertsAndMessages(true);
+    setShowActionMenu(false);
     setShowProvinceForm(false);
     setSelectedNode(null);
   }, []);
@@ -56,6 +67,8 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
     bottomSheetRef.current?.close();
     setShowActionMenu(false);
     setShowProvinceForm(false);
+    setShowAlertsAndMessages(false);
+    setInitialChatTarget(null);
     focusTransition.value = withTiming(0, { duration: 200 }, (finished) => {
       if (finished) {
         overlayClusterData.value = null;
@@ -86,6 +99,7 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
         setSelectedNode(node);
         setShowActionMenu(false);
         setShowProvinceForm(false);
+        setShowAlertsAndMessages(false);
       }
     },
     [selectedNode, nodes, links, fontBold, activeFocusState, focusTransition, overlayClusterData, closePanels]
@@ -98,6 +112,11 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
     setShowActionMenu,
     showProvinceForm,
     setShowProvinceForm,
+    showAlertsAndMessages,
+    setShowAlertsAndMessages,
+    initialChatTarget,
+    setInitialChatTarget,
+    openAlertsAndMessages,
     currentLOD,
     setCurrentLOD,
     selectedNode,

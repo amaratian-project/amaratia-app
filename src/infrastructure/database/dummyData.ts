@@ -164,3 +164,38 @@ export const injectDummyTopology = async () => {
     Logger.error('Error inyectando dummy data:', error);
   }
 };
+
+/**
+ * Limpia los nodos de prueba sintéticos (dummy) de la base de datos local
+ * y conserva únicamente la identidad real del usuario y sus relaciones genuinas.
+ */
+export const ensureCleanStorage = async () => {
+  try {
+    const citizensCollection = database.collections.get('citizens');
+    const trustLinksCollection = database.collections.get('trust_links');
+
+    const allCitizens = await citizensCollection.query().fetch();
+    const dummyCitizens = allCitizens.filter((c: any) => c.npub && c.npub.startsWith('npub_dummy_'));
+
+    if (dummyCitizens.length > 0) {
+      Logger.log(`Limpiando ${dummyCitizens.length} nodos dummy de la base de datos...`);
+      const dummyIds = new Set(dummyCitizens.map((c: any) => c.id));
+      const allLinks = await trustLinksCollection.query().fetch();
+      const dummyLinks = allLinks.filter(
+        (l: any) => dummyIds.has(l._raw.from_citizen_id) || dummyIds.has(l._raw.to_citizen_id)
+      );
+
+      await database.write(async () => {
+        for (const link of dummyLinks) {
+          await link.destroyPermanently();
+        }
+        for (const cit of dummyCitizens) {
+          await cit.destroyPermanently();
+        }
+      });
+      Logger.log('Base de datos saneada: nodos dummy eliminados.');
+    }
+  } catch (error) {
+    Logger.error('Error limpiando almacenamiento:', error);
+  }
+};

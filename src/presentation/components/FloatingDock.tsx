@@ -8,6 +8,7 @@ type FloatingDockProps = {
   onMarketPress: () => void;
   onVotePress: () => void;
   onProfilePress: () => void;
+  hasUnreadAlerts?: boolean;
   onLayout?: (event: any) => void;
 };
 
@@ -17,6 +18,7 @@ export const FloatingDock = ({
   onMarketPress, 
   onVotePress, 
   onProfilePress,
+  hasUnreadAlerts = false,
   onLayout
 }: FloatingDockProps) => {
   return (
@@ -24,7 +26,10 @@ export const FloatingDock = ({
       <View style={styles.dockContainer}>
         
         <TouchableOpacity style={styles.iconButton} onPress={onMessagePress}>
-          <Ionicons name="chatbubbles-outline" size={24} color="#94a3b8" />
+          <View>
+            <Ionicons name="chatbubbles-outline" size={24} color="#94a3b8" />
+            {hasUnreadAlerts && <View style={styles.unreadBadge} />}
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.iconButton} onPress={onMarketPress}>
@@ -92,5 +97,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6', // Azul tecnológico
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#38bdf8',
   }
 });

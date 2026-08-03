@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Platform, Text, Pressable } from 'react-native';
+import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Platform, Text, Pressable, Alert } from 'react-native';
 import { Canvas, Group, useFont } from '@shopify/react-native-skia';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { useSharedValue, useDerivedValue, useAnimatedReaction, runOnJS, withSpring, withTiming, useAnimatedStyle, interpolate, Extrapolation, interpolateColor } from 'react-native-reanimated';
 import Animated from 'react-native-reanimated';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useDependencies } from '../../application/context/DependencyContext';
 import { useAuth } from '../../application/context/AuthContext';
 import { IdentityUseCase } from '../../application/use-cases/IdentityUseCase';
+import { VisaSyncService } from '../../application/services/VisaSyncService';
 import { GraphTopology } from '../../domain/models/GraphTopology';
 
 import { MapNode } from '../../types/canvas';
@@ -18,7 +19,7 @@ import { useCanvasGestures } from '../hooks/useCanvasGestures';
 import { useCanvasUIState } from '../hooks/useCanvasUIState';
 import { FastCanvasRenderer, getRadius, buildOverlayCluster } from './canvas/FastCanvasRenderer';
 import type { OverlayClusterPaths } from './canvas/FastCanvasRenderer';
-import { QRGenerator } from './QRGenerator';
+import { DniModal } from './DniModal';
 import { FloatingDock } from './FloatingDock';
 import { ContextualBottomSheet } from './ContextualBottomSheet';
 import { CitizenProfileContent } from './CitizenProfileContent';
@@ -26,6 +27,10 @@ import { ActionMenuContent } from './ActionMenuContent';
 import { CreateProvinceForm } from './CreateProvinceForm';
 import { ProvinceChatUI } from './ProvinceChatUI';
 import { CauseInfoContent } from './CauseInfoContent';
+import { AlertsAndMessagesContent } from './AlertsAndMessagesContent';
+import { CivicAlertService } from '../../application/services/CivicAlertService';
+import { messagingService } from '../../application/services/MessagingService';
+import { MessageReadTracker } from '../../application/services/MessageReadTracker';
 
 const { width, height } = Dimensions.get('window');
 const SCREEN_HEIGHT = height;
@@ -55,6 +60,7 @@ const LodSegmentButton = ({ item, animMode, onPress }: any) => {
 
 export const CanvasMap = () => {
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
+  const route = useRoute<any>();
   const fontNormal = useFont(require('../../../assets/Modelica-Regular.ttf'), 11);
   const fontBold = useFont(require('../../../assets/Modelica-Bold.ttf'), 14);
 
@@ -69,14 +75,231 @@ export const CanvasMap = () => {
     return { ...identityUseCase.deriveKeysFromMnemonic(mnemonic), alias: 'Ciudadano (Dev)' };
   }, [identity]);
 
-  // 1. Data Fetching
+  // 1. Data Fetching & Dynamic Refresh
+  const fetchTopology = useCallback(async () => {
+    const topology = await citizenRepository.getHydratedCitizens(activeIdentity?.npub);
+    setFullTopology(topology);
+  }, [citizenRepository, activeIdentity?.npub]);
+
   useEffect(() => {
-    const fetchTopology = async () => {
-      const topology = await citizenRepository.getHydratedCitizens();
-      setFullTopology(topology);
-    };
     fetchTopology();
-  }, [citizenRepository]);
+  }, [fetchTopology]);
+
+  const [hasUnreadAlerts, setHasUnreadAlerts] = useState(false);
+  const [unreadMessagesMap, setUnreadMessagesMap] = useState<Record<string, number>>({});
+
+  // Cargar estado inicial de alertas (sin inicializar MessageReadTracker aquí - se hace en el efecto de mensajes)
+  useEffect(() => {
+    if (!activeIdentity?.npub) return;
+    CivicAlertService.getAlerts(activeIdentity.npub).then((alerts) => {
+      const hasUnread = alerts.some((a) => !a.read);
+      setHasUnreadAlerts(hasUnread);
+    });
+  }, [activeIdentity?.npub]);
+
+  const markTargetAsRead = useCallback((targetId: string) => {
+    if (activeIdentity?.npub) {
+      MessageReadTracker.markAsRead(activeIdentity.npub, targetId, Date.now());
+    }
+    setUnreadMessagesMap((prev) => {
+      const cleanId = targetId.replace(/^dm_/, '').replace(/^prov_/, '').replace(/^cause_/, '');
+      const next = { ...prev };
+      delete next[targetId];
+      delete next[cleanId];
+      return next;
+    });
+  }, [activeIdentity?.npub]);
+
+  const markAllMessagesAsRead = useCallback(() => {
+    if (activeIdentity?.npub) {
+      MessageReadTracker.markAllAsRead(activeIdentity.npub);
+    }
+    setUnreadMessagesMap({});
+  }, [activeIdentity?.npub]);
+
+  // Efecto 0: Escuchar mensajes directos entrantes en tiempo real para activar balizas y badges
+  //
+  // DISEÑO: Usamos un Set de IDs de mensajes ya procesados para garantizar idempotencia.
+  // Los relays Nostr reenvían mensajes históricos al reconectar, y sin deduplicación
+  // el contador se inflaría cada vez. Con el Set, cada mensaje se evalúa exactamente una vez
+  // por ciclo de vida del componente.
+  useEffect(() => {
+    if (!activeIdentity?.nsec || !activeIdentity?.npub) return;
+
+    let isMounted = true;
+    let unsubscribe = () => {};
+    const processedMsgIds = new Set<string>();
+
+    const setup = async () => {
+      // ÚNICO punto de inicialización de MessageReadTracker
+      await MessageReadTracker.initialize(activeIdentity.npub);
+      if (!isMounted) return;
+
+      unsubscribe = messagingService.subscribeToAllIncomingDirectMessages(
+        activeIdentity.nsec,
+        (msg) => {
+          // Deduplicar: si ya procesamos este event ID, ignorar
+          if (processedMsgIds.has(msg.id)) return;
+          processedMsgIds.add(msg.id);
+
+          // Registrar la conversación en el historial persistente de chats conocidos
+          MessageReadTracker.recordChat(activeIdentity.npub, msg.senderNpub);
+
+          const isNew = MessageReadTracker.isUnread(activeIdentity.npub, msg.senderNpub, msg.timestamp);
+          if (isNew) {
+            setUnreadMessagesMap((prev) => ({
+              ...prev,
+              [msg.senderNpub]: (prev[msg.senderNpub] || 0) + 1,
+            }));
+          }
+        }
+      );
+    };
+
+    setup();
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [activeIdentity?.nsec, activeIdentity?.npub]);
+
+  // Efecto 1: Otorgar Visa (Padrino -> Turista vía DB local + Nostr Relay)
+  useEffect(() => {
+    if (route.params?.addCitizen) {
+      const npubToAdd = route.params.addCitizen;
+      const processAdd = async () => {
+        try {
+          // 1. Guardar localmente en SQLite
+          await citizenRepository.addCitizenToLevel1(npubToAdd, undefined, activeIdentity?.npub);
+          await fetchTopology();
+
+          // 2. Publicar la Visa en los Relays de Nostr para que el Turista la reciba automáticamente
+          if (activeIdentity?.nsec) {
+            const visaSync = new VisaSyncService();
+            await visaSync.publishVisa(
+              activeIdentity.nsec,
+              activeIdentity.alias || 'Padrino',
+              npubToAdd
+            );
+
+            // 3. Registrar en la bitácora cívica local
+            await CivicAlertService.addAlert(activeIdentity.npub, {
+              type: 'VISA_GRANTED',
+              title: 'Has otorgado una Visa',
+              description: `Has acreditado al ciudadano Amarata-${npubToAdd.substring(5, 9).toUpperCase()} en tu red de Nivel 1.`,
+              relatedNpub: npubToAdd,
+            });
+          }
+        } catch (e) {
+          console.error("Error acreditando ciudadano en canvas:", e);
+        }
+      };
+      processAdd();
+    }
+  }, [route.params?.addCitizen, citizenRepository, fetchTopology, activeIdentity]);
+
+  // Efecto 2: Escuchar Eventos Cívicos entrantes (Visas y Revocaciones en 1º, 2º y 3er Grado)
+  useEffect(() => {
+    if (!activeIdentity?.npub) return;
+
+    const visaSync = new VisaSyncService();
+    const unsubscribe = visaSync.subscribeToCivicEvents(activeIdentity.npub, {
+      onVisaGranted: async (sponsorNpub, sponsorAlias, targetNpub) => {
+        try {
+          if (targetNpub === activeIdentity.npub) {
+            const wasNew = await citizenRepository.receiveVisaFrom(
+              sponsorNpub,
+              sponsorAlias,
+              activeIdentity.npub
+            );
+
+            if (wasNew) {
+              await CivicAlertService.addAlert(activeIdentity.npub, {
+                type: 'VISA_RECEIVED',
+                title: '¡Ciudadanía de Amaratia Otorgada!',
+                description: `Has recibido una Visa cívica de ${sponsorAlias || `Amarata-${sponsorNpub.substring(5, 9).toUpperCase()}`}. ¡Tu DNI ha sido promovido a Ciudadano!`,
+                relatedNpub: sponsorNpub,
+                relatedAlias: sponsorAlias,
+              });
+              setHasUnreadAlerts(true);
+              Alert.alert(
+                '🏛️ ¡Ciudadanía de Amaratia Otorgada!',
+                `Has recibido una Visa cívica de ${sponsorAlias || `Amarata-${sponsorNpub.substring(5, 9).toUpperCase()}`}.\n\n¡Tu DNI ha sido promovido a Ciudadano de Amaratia y tu garante ha sido agregado a tu red!`,
+                [{ text: '¡Excelente!' }]
+              );
+              await fetchTopology();
+            }
+          } else {
+            // Evento de red (Descubrimiento dinámico de 2º y 3er Grado)
+            const changed = await citizenRepository.processNetworkVisa(
+              sponsorNpub,
+              sponsorAlias,
+              targetNpub,
+              activeIdentity.npub
+            );
+            if (changed) {
+              await fetchTopology();
+            }
+          }
+        } catch (err) {
+          console.error('Error procesando visa recibida en UI:', err);
+        }
+      },
+      onVisaRevoked: async (revokerNpub, revokerAlias, targetNpub) => {
+        try {
+          if (targetNpub === activeIdentity.npub) {
+            if (activeIdentity?.npub && revokerNpub) {
+              MessageReadTracker.markAsRead(activeIdentity.npub, revokerNpub, Date.now());
+              setUnreadMessagesMap((prev) => {
+                const next = { ...prev };
+                delete next[revokerNpub];
+                return next;
+              });
+            }
+
+            const res = await citizenRepository.processVisaRevocation(
+              revokerNpub,
+              activeIdentity.npub
+            );
+
+            if (res.success) {
+              await CivicAlertService.addAlert(activeIdentity.npub, {
+                type: 'VISA_REVOKED',
+                title: 'Visa Cívica Revocada',
+                description: `El ciudadano ${revokerAlias || `Amarata-${revokerNpub.substring(5, 9).toUpperCase()}`} ha revocado su visa. Tu nuevo rol cívico es ${res.newRole === 'CITIZEN' ? 'Ciudadano' : 'Turista'} (${res.remainingVisas} visas activas restantes).`,
+                relatedNpub: revokerNpub,
+                relatedAlias: revokerAlias,
+              });
+              setHasUnreadAlerts(true);
+              Alert.alert(
+                '⚠️ Actualización de Red Cívica',
+                `El ciudadano ${revokerAlias || `Amarata-${revokerNpub.substring(5, 9).toUpperCase()}`} ha revocado su visa cívica.\n\nTu red de confianza y títulos cívicos han sido actualizados bilateralmente.`,
+                [{ text: 'Entendido' }]
+              );
+              await fetchTopology();
+            }
+          } else {
+            // Revocación en la red (2º o 3er Grado)
+            const changed = await citizenRepository.processNetworkRevocation(
+              revokerNpub,
+              targetNpub,
+              activeIdentity.npub
+            );
+            if (changed) {
+              await fetchTopology();
+            }
+          }
+        } catch (err) {
+          console.error('Error procesando revocación en UI:', err);
+        }
+      },
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeIdentity?.npub, citizenRepository, fetchTopology]);
 
   // 2. Physics & Graph
   const {
@@ -95,6 +318,10 @@ export const CanvasMap = () => {
     setShowActionMenu,
     showProvinceForm,
     setShowProvinceForm,
+    showAlertsAndMessages,
+    setShowAlertsAndMessages,
+    initialChatTarget,
+    openAlertsAndMessages,
     currentLOD,
     setCurrentLOD,
     selectedNode,
@@ -188,6 +415,7 @@ export const CanvasMap = () => {
                 animMode={animMode}
                 fontBold={fontBold}
                 scale={scale}
+                unreadNodes={unreadMessagesMap}
               />
             </Group>
           </Canvas>
@@ -226,10 +454,16 @@ export const CanvasMap = () => {
           <View style={{ position: 'absolute', bottom: 0, width: '100%', alignItems: 'center', paddingBottom: 30, pointerEvents: 'box-none' }}>
             <FloatingDock
               onAddPress={openActionMenu}
-              onMessagePress={() => console.log('Mensajes')}
+              onMessagePress={() => {
+                // NO limpiar hasUnreadAlerts aquí prematuramente.
+                // Se limpia a través del callback onAlertsCleared cuando
+                // AlertsAndMessagesContent confirme que markAllAsRead completó.
+                openAlertsAndMessages();
+              }}
               onMarketPress={() => console.log('Mercado')}
               onVotePress={() => console.log('Votaciones')}
               onProfilePress={() => setShowQR(true)}
+              hasUnreadAlerts={hasUnreadAlerts || Object.values(unreadMessagesMap).some((c) => c > 0)}
             />
           </View>
 
@@ -238,30 +472,101 @@ export const CanvasMap = () => {
             animatedPosition={animatedPosition}
             onClose={closePanels}
             mode={
-              showProvinceForm ? 'provinceForm' :
-                showActionMenu ? 'actionMenu' :
-                  (selectedNode?.level === -1 ? 'province' :
-                    selectedNode?.level === -2 ? 'cause' : 'citizen')
+              showAlertsAndMessages ? 'alertsAndMessages' :
+                showProvinceForm ? 'provinceForm' :
+                  showActionMenu ? 'actionMenu' :
+                    (selectedNode?.level === -1 ? 'province' :
+                      selectedNode?.level === -2 ? 'cause' : 'citizen')
             }
           >
-            {selectedNode && selectedNode.level >= 0 && (
+            {showAlertsAndMessages && (
+              <AlertsAndMessagesContent
+                onClose={closePanels}
+                initialTarget={initialChatTarget}
+                unreadMessagesMap={unreadMessagesMap}
+                onMarkAsRead={markTargetAsRead}
+                onMarkAllAsRead={markAllMessagesAsRead}
+                onAlertsCleared={() => setHasUnreadAlerts(false)}
+              />
+            )}
+            {!showAlertsAndMessages && selectedNode && selectedNode.level >= 0 && (
               <CitizenProfileContent
                 citizen={selectedNode}
                 onClose={closePanels}
                 onViewProfile={() => { }}
+                onOpenChat={() => {
+                  if (selectedNode.npub) markTargetAsRead(selectedNode.npub);
+                  markTargetAsRead(selectedNode.id);
+                  openAlertsAndMessages({
+                    type: 'DIRECT',
+                    id: selectedNode.id,
+                    title: selectedNode.localName || selectedNode.alias,
+                    targetNpub: selectedNode.npub,
+                  });
+                }}
                 onUpdateLocalName={(newName) => {
                   setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
                   setSelectedNode({ ...selectedNode, localName: newName });
                 }}
+                onRevokeVisa={async () => {
+                  try {
+                    const targetNpub = await citizenRepository.revokeVisa(selectedNode.id, activeIdentity?.npub);
+                    if (targetNpub) {
+                      if (activeIdentity?.npub) {
+                        MessageReadTracker.markAsRead(activeIdentity.npub, targetNpub, Date.now());
+                        setUnreadMessagesMap((prev) => {
+                          const next = { ...prev };
+                          delete next[targetNpub];
+                          delete next[selectedNode.id];
+                          return next;
+                        });
+                      }
+
+                      if (activeIdentity?.nsec) {
+                        const visaSync = new VisaSyncService();
+                        await visaSync.publishRevokeVisa(
+                          activeIdentity.nsec,
+                          activeIdentity.alias || 'Padrino',
+                          targetNpub
+                        );
+
+                        if (activeIdentity?.npub) {
+                          await CivicAlertService.addAlert(activeIdentity.npub, {
+                            type: 'VISA_REVOKED',
+                            title: 'Has revocado una Visa',
+                            description: `Has revocado la visa al ciudadano ${selectedNode.localName || selectedNode.alias}. El enlace bilateral ha sido disuelto.`,
+                            relatedNpub: targetNpub,
+                            relatedAlias: selectedNode.alias,
+                          });
+                          setHasUnreadAlerts(true);
+                        }
+                      }
+                    }
+                    closePanels();
+                    await fetchTopology();
+                  } catch (e) {
+                    console.error("Error revocando visa en canvas:", e);
+                  }
+                }}
               />
             )}
-            {selectedNode && selectedNode.level === -1 && (
+            {!showAlertsAndMessages && selectedNode && selectedNode.level === -1 && (
               <ProvinceChatUI provinceId={selectedNode.id} provinceName={selectedNode.alias} />
             )}
-            {selectedNode && selectedNode.level === -2 && (
-              <CauseInfoContent causeNode={selectedNode} />
+            {!showAlertsAndMessages && selectedNode && selectedNode.level === -2 && (
+              <CauseInfoContent
+                causeNode={selectedNode}
+                onOpenChat={() => {
+                  markTargetAsRead(selectedNode.id);
+                  openAlertsAndMessages({
+                    type: 'CAUSE',
+                    id: selectedNode.id,
+                    title: selectedNode.alias,
+                  });
+                }}
+              />
             )}
-            {showActionMenu && (
+            {!showAlertsAndMessages && showActionMenu && (
               <ActionMenuContent
                 onScanCitizen={() => {
                   closePanels();
@@ -273,7 +578,7 @@ export const CanvasMap = () => {
                 }}
               />
             )}
-            {showProvinceForm && (
+            {!showAlertsAndMessages && showProvinceForm && (
               <CreateProvinceForm
                 onClose={closePanels}
                 onSuccess={async () => {
@@ -289,7 +594,7 @@ export const CanvasMap = () => {
 
       {showQR && activeIdentity && (
         <View style={StyleSheet.absoluteFill}>
-          <QRGenerator
+          <DniModal
             identity={activeIdentity}
             onClose={() => setShowQR(false)}
           />

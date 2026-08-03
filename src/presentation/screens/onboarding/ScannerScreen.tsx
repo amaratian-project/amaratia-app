@@ -79,12 +79,12 @@ export const ScannerScreen = ({ navigation }: Props) => {
       const newNpub = nip19.npubEncode(event.pubkey);
       
       Alert.alert(
-        'Ciudadano Detectado',
-        `¿Deseas agregar a esta persona a tu Red de Confianza (Nivel 1)?\n\nID: Amarata-${newNpub.substring(5, 9).toUpperCase()}`,
+        'Turista Detectado',
+        `¿Deseas otorgarle una Visa a esta persona y agregarla a tu Red de Confianza (Nivel 1)?\n\nID: Amarata-${newNpub.substring(5, 9).toUpperCase()}`,
         [
           { text: 'Cancelar', style: 'cancel', onPress: () => setScanned(false) },
           { 
-            text: 'Agregar', 
+            text: 'Otorgar Visa', 
             style: 'default',
             onPress: () => {
               navigation.navigate('MainApp', { addCitizen: newNpub });

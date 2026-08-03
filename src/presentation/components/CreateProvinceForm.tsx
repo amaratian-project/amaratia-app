@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useDependencies } from '../../application/context/DependencyContext';
+import { useAuth } from '../../application/context/AuthContext';
 
 type CreateProvinceFormProps = {
   onClose: () => void;
@@ -10,6 +11,7 @@ type CreateProvinceFormProps = {
 
 export const CreateProvinceForm = ({ onClose, onSuccess }: CreateProvinceFormProps) => {
   const { citizenRepository } = useDependencies();
+  const { identity } = useAuth();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +27,7 @@ export const CreateProvinceForm = ({ onClose, onSuccess }: CreateProvinceFormPro
     setError('');
     
     try {
-      await citizenRepository.createProvince(name, description);
+      await citizenRepository.createProvince(name, description, identity?.npub);
       onSuccess();
     } catch (e: any) {
       setError(e.message || 'Error al fundar la provincia');

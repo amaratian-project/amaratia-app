@@ -41,6 +41,7 @@ export interface FastCanvasRendererProps {
   animMode: SharedValue<number>;
   fontBold: SkFont | null;
   scale: SharedValue<number>;
+  unreadNodes?: Record<string, number>;
 }
 
 export const getRadius = (level: number) => {
@@ -195,6 +196,7 @@ const StaticLevelLayer = React.memo(({
   halo2Path,
   textPath,
   textShadowPath,
+  unreadDotPath,
   color,
   animMode,
   unfocusedMultiplier,
@@ -246,6 +248,13 @@ const StaticLevelLayer = React.memo(({
           <Path path={textPath} color="rgba(255, 255, 255, 0.7)" />
         </Group>
       )}
+
+      {/* Bolita roja de notificación estándar (#ef4444) que hereda la opacidad del nivel */}
+      {unreadDotPath && (
+        <Group opacity={baseLODOpacity}>
+          <Path path={unreadDotPath} color="#ef4444" />
+        </Group>
+      )}
     </Group>
   );
 });
@@ -257,7 +266,8 @@ export const FastCanvasRenderer = React.memo(({
   focusTransition,
   animMode,
   fontBold,
-  scale
+  scale,
+  unreadNodes,
 }: FastCanvasRendererProps) => {
 
   // ═══════════════════════════════════════════════════════════════
@@ -271,6 +281,7 @@ export const FastCanvasRenderer = React.memo(({
       halo2: any;
       textPath: any;
       textShadowPath: any;
+      unreadDotPath: any;
       color: string;
     }>();
 
@@ -282,6 +293,7 @@ export const FastCanvasRenderer = React.memo(({
           halo2: Skia.Path.Make(),
           textPath: Skia.Path.Make(),
           textShadowPath: Skia.Path.Make(),
+          unreadDotPath: Skia.Path.Make(),
           color: n.color
         });
       }
@@ -290,6 +302,15 @@ export const FastCanvasRenderer = React.memo(({
       layer.path.addCircle(n.pos.x, n.pos.y, rMain);
       layer.halo1.addCircle(n.pos.x, n.pos.y, rMain * 1.8);
       layer.halo2.addCircle(n.pos.x, n.pos.y, rMain * 1.4);
+
+      // Bolita roja si tiene mensajes sin leer
+      const count = unreadNodes ? ((unreadNodes[n.id] || (n.npub ? unreadNodes[n.npub] : 0)) || 0) : 0;
+      if (count > 0) {
+        const bx = n.pos.x + rMain * 0.72;
+        const by = n.pos.y - rMain * 0.72;
+        const br = n.level === -2 ? 18 : n.level === -1 ? 11 : n.level === 0 ? 6.5 : 4.5;
+        layer.unreadDotPath.addCircle(bx, by, br);
+      }
 
       if (fontBold) {
         const fontScale = n.level === -2 ? 6.0 : (n.level === -1 ? 4.0 : 1.0);
@@ -345,7 +366,7 @@ export const FastCanvasRenderer = React.memo(({
         primary: Array.from(linksPrimary.entries())
       }
     };
-  }, [nodes, links, fontBold]);
+  }, [nodes, links, fontBold, unreadNodes]);
 
   // ═══════════════════════════════════════════════════════════════
   // 2. ATENUACIÓN DEL FONDO (GPU pura, 4 useDerivedValues en total)
@@ -484,6 +505,7 @@ export const FastCanvasRenderer = React.memo(({
           halo2Path={data.halo2}
           textPath={data.textPath}
           textShadowPath={data.textShadowPath}
+          unreadDotPath={data.unreadDotPath}
           color={data.color}
           animMode={animMode}
           unfocusedMultiplier={unfocusedMultiplier}

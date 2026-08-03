@@ -1,5 +1,6 @@
 export interface PublicNetworkData {
-  id: string; // npub
+  id: string; // Citizen ID
+  npub?: string; // Nostr npub
   alias: string;
   merit: number;
   role: string;

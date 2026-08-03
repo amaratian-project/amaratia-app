@@ -7,6 +7,7 @@ type CitizenProfileContentProps = {
   citizen: {
     id: string;
     alias: string;
+    npub?: string;
     localName?: string;
     merit: number;
     level: number;
@@ -14,9 +15,18 @@ type CitizenProfileContentProps = {
   onClose: () => void;
   onViewProfile: () => void;
   onUpdateLocalName: (newName: string | undefined) => void;
+  onRevokeVisa?: () => void;
+  onOpenChat?: () => void;
 };
 
-export const CitizenProfileContent = ({ citizen, onClose, onViewProfile, onUpdateLocalName }: CitizenProfileContentProps) => {
+export const CitizenProfileContent = ({
+  citizen,
+  onClose,
+  onViewProfile,
+  onUpdateLocalName,
+  onRevokeVisa,
+  onOpenChat,
+}: CitizenProfileContentProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(citizen.localName || '');
 
@@ -86,7 +96,7 @@ export const CitizenProfileContent = ({ citizen, onClose, onViewProfile, onUpdat
           )}
 
           <Text style={styles.levelText}>
-            {citizen.level === 0 ? 'Tú' : `Conexión de Grado ${citizen.level}`}
+            {citizen.level === 0 ? 'Tú (Nodo Raíz)' : `Conexión de Grado ${citizen.level}`}
           </Text>
         </View>
         
@@ -111,8 +121,27 @@ export const CitizenProfileContent = ({ citizen, onClose, onViewProfile, onUpdat
             <TouchableOpacity style={styles.btnSecondary} onPress={onClose}>
               <Text style={styles.btnSecondaryText}>Cerrar</Text>
             </TouchableOpacity>
+
+            {citizen.level !== 0 && onOpenChat && (
+              <TouchableOpacity
+                style={styles.btnChat}
+                onPress={onOpenChat}
+              >
+                <Text style={styles.btnChatText}>💬 Mensaje</Text>
+              </TouchableOpacity>
+            )}
+
+            {citizen.level === 1 && onRevokeVisa && (
+              <TouchableOpacity
+                style={styles.btnDanger}
+                onPress={onRevokeVisa}
+              >
+                <Text style={styles.btnDangerText}>Revocar</Text>
+              </TouchableOpacity>
+            )}
+            
             <TouchableOpacity style={styles.btnPrimary} onPress={onViewProfile}>
-              <Text style={styles.btnPrimaryText}>Ver Perfil</Text>
+              <Text style={styles.btnPrimaryText}>Perfil</Text>
             </TouchableOpacity>
           </>
         )}
@@ -199,7 +228,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   btnSecondary: {
     flex: 1,
@@ -211,18 +240,47 @@ const styles = StyleSheet.create({
   btnSecondaryText: {
     color: '#cbd5e1',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 13,
+  },
+  btnChat: {
+    flex: 1.3,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: '#0284c7',
+    alignItems: 'center',
+  },
+  btnChatText: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  btnDanger: {
+    flex: 1.1,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    alignItems: 'center',
+  },
+  btnDangerText: {
+    color: '#f87171',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
   btnPrimary: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 16,
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#334155',
+    borderWidth: 1,
+    borderColor: '#475569',
     alignItems: 'center',
   },
   btnPrimaryText: {
-    color: '#ffffff',
+    color: '#cbd5e1',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 13,
   },
 });
+

@@ -12,10 +12,10 @@ export const ActionMenuContent = ({ onScanCitizen, onCreateProvince }: ActionMen
       <Text style={styles.sheetTitle}>Crear</Text>
         
       <TouchableOpacity style={styles.sheetButton} onPress={onScanCitizen}>
-        <Text style={styles.sheetButtonIcon}>👤</Text>
+        <Text style={styles.sheetButtonIcon}>🛡️</Text>
         <View style={styles.sheetButtonTextContainer}>
-          <Text style={styles.sheetButtonTitle}>Añadir Ciudadano</Text>
-          <Text style={styles.sheetButtonSub}>Escanear código QR de una persona</Text>
+          <Text style={styles.sheetButtonTitle}>Otorgar Visa</Text>
+          <Text style={styles.sheetButtonSub}>Agregar ciudadano a tu red de confianza escaneando su codigo qr</Text>
         </View>
       </TouchableOpacity>
 

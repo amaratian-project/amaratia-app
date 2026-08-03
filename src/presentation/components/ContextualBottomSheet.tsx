@@ -19,6 +19,7 @@ export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomShe
     const snapPoints = useMemo(() => {
       switch (mode) {
         case 'chat': return ['90%'];
+        case 'alertsAndMessages': return ['90%'];
         case 'province': return ['25%', '50%', '90%'];
         case 'citizen': return ['30%'];
         case 'cause': return ['45%'];
