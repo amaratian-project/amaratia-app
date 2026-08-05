@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
 import { database } from '../../infrastructure/database';
 
 type CitizenProfileContentProps = {
@@ -58,7 +57,7 @@ export const CitizenProfileContent = ({
       <View style={styles.header}>
         <View style={{ flex: 1, paddingRight: 10 }}>
           {isEditing ? (
-            <BottomSheetTextInput 
+            <TextInput 
               style={styles.input}
               value={editValue}
               onChangeText={setEditValue}
@@ -152,6 +151,7 @@ export const CitizenProfileContent = ({
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     paddingBottom: 20,
   },
   header: {

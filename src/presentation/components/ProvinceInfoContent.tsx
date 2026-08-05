@@ -2,46 +2,50 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { MapNode } from '../../types/canvas';
 
-type CauseInfoContentProps = {
-  causeNode: MapNode;
+export interface ProvinceInfoContentProps {
+  provinceNode: MapNode;
   onOpenChat?: () => void;
-};
+}
 
-export const CauseInfoContent = ({ causeNode, onOpenChat }: CauseInfoContentProps) => {
+export const ProvinceInfoContent = ({
+  provinceNode,
+  onOpenChat,
+}: ProvinceInfoContentProps) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
-          <Text style={styles.icon}>⚖️</Text>
-          <Text style={styles.title}>{causeNode.alias}</Text>
+          <Text style={styles.icon}>🏛️</Text>
+          <Text style={styles.title}>{provinceNode.alias}</Text>
         </View>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>Gobernanza</Text>
+          <Text style={styles.badgeText}>Asamblea Activa</Text>
         </View>
       </View>
 
       <Text style={styles.description}>
-        {causeNode.localName || 'Causa social y política respaldada por provincias libres en Amaratia.'}
+        {provinceNode.localName ||
+          'Provincia federada de Amaratia. Espacio soberano de deliberación, gobernanza local y desarrollo comunitario.'}
       </Text>
 
       <View style={styles.statsRow}>
         <View style={styles.stat}>
-          <Text style={styles.statValue}>{causeNode.merit || 120}</Text>
-          <Text style={styles.statLabel}>Apoyos</Text>
+          <Text style={styles.statValue}>{provinceNode.merit || 12}</Text>
+          <Text style={styles.statLabel}>Ciudadanos</Text>
         </View>
         <View style={styles.stat}>
           <Text style={styles.statValue}>3</Text>
-          <Text style={styles.statLabel}>Provincias</Text>
+          <Text style={styles.statLabel}>Proyectos</Text>
         </View>
         <View style={styles.stat}>
-          <Text style={styles.statValue}>Activa</Text>
-          <Text style={styles.statLabel}>Estado</Text>
+          <Text style={styles.statValue}>100%</Text>
+          <Text style={styles.statLabel}>Salud</Text>
         </View>
       </View>
 
       {onOpenChat && (
-        <TouchableOpacity style={styles.chatButton} onPress={onOpenChat}>
-          <Text style={styles.chatButtonText}>💬 Abrir Foro de la Causa</Text>
+        <TouchableOpacity style={styles.chatButton} onPress={onOpenChat} activeOpacity={0.8}>
+          <Text style={styles.chatButtonText}>💬 Entrar a la Asamblea Provincial</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -66,7 +70,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   icon: {
-    fontSize: 20,
+    fontSize: 22,
   },
   title: {
     fontSize: 20,
@@ -75,13 +79,13 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   badge: {
-    backgroundColor: '#ec4899',
+    backgroundColor: '#10b981',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
   },
   badgeText: {
-    color: '#ffffff',
+    color: '#020617',
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -111,7 +115,7 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
   },
   chatButton: {
-    marginTop: 15,
+    marginTop: 16,
     paddingVertical: 12,
     borderRadius: 14,
     backgroundColor: '#0284c7',

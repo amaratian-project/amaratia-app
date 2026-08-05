@@ -1,5 +1,5 @@
 import { Gesture } from 'react-native-gesture-handler';
-import { useSharedValue, useDerivedValue, withSpring, withTiming, runOnJS, interpolate, Extrapolation } from 'react-native-reanimated';
+import { useSharedValue, useDerivedValue, withSpring, withTiming, runOnJS, interpolate, Extrapolation, SharedValue } from 'react-native-reanimated';
 import { Dimensions } from 'react-native';
 import { MapNode } from '../../types/canvas';
 
@@ -18,13 +18,15 @@ interface GesturesConfig {
   nodes: MapNode[];
   handleNodePress: (node: MapNode) => void;
   closePanels: () => void;
+  animatedPosition?: SharedValue<number>;
 }
 
 export const useCanvasGestures = ({
   bounds,
   nodes,
   handleNodePress,
-  closePanels
+  closePanels,
+  animatedPosition
 }: GesturesConfig) => {
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -75,6 +77,24 @@ export const useCanvasGestures = ({
 
   const panGesture = Gesture.Pan()
     .maxPointers(1)
+    .manualActivation(true)
+    .onTouchesDown((e, manager) => {
+      'worklet';
+      // Si el toque cae en el área del BottomSheet, FALLAR el gesto
+      // para liberar el toque y que el FlatList nativo lo reciba.
+      // Antes solo retornábamos de onStart, pero el gesto seguía en
+      // estado ACTIVE, capturando el toque e impidiendo el scroll.
+      const touch = e.changedTouches[0];
+      if (animatedPosition && touch.absoluteY >= animatedPosition.value - 10) {
+        manager.fail();
+      }
+    })
+    .onTouchesMove((_e, manager) => {
+      'worklet';
+      // El toque está en el canvas (no fue fallado en onTouchesDown).
+      // Activar el gesto de paneo del mapa.
+      manager.activate();
+    })
     .onStart(() => {
       if (activeGesture.value !== GestureMode.NONE) return;
       activeGesture.value = GestureMode.PANNING;
@@ -112,6 +132,7 @@ export const useCanvasGestures = ({
 
   const pinchGesture = Gesture.Pinch()
     .onStart((e) => {
+      if (animatedPosition && e.focalY >= animatedPosition.value - 10) return;
       if (activeGesture.value !== GestureMode.NONE) return;
       activeGesture.value = GestureMode.PINCHING;
       savedScale.value = scale.value;
@@ -172,6 +193,7 @@ export const useCanvasGestures = ({
     .maxDistance(10)
     .runOnJS(true)
     .onEnd((e) => {
+      if (animatedPosition && e.y >= animatedPosition.value - 10) return;
       if (activeGesture.value !== GestureMode.NONE) return;
       const originX = width / 2;
       const originY = height / 2;

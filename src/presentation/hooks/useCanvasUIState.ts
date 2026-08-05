@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Dimensions, Vibration } from 'react-native';
-import { useSharedValue, withTiming, runOnJS, SharedValue } from 'react-native-reanimated';
+import { useSharedValue, withTiming, SharedValue } from 'react-native-reanimated';
 import { MapNode, MapLink } from '../../types/canvas';
 import { buildOverlayCluster, OverlayClusterPaths } from '../components/canvas/FastCanvasRenderer';
 import { SkFont } from '@shopify/react-native-skia';
@@ -19,9 +19,12 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
   const [initialChatTarget, setInitialChatTarget] = useState<any>(null);
   const [currentLOD, setCurrentLOD] = useState(1);
   const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
+  const [isNodeChatOpen, setIsNodeChatOpen] = useState(false);
+  const [sheetSnapIndex, setSheetSnapIndex] = useState<number>(0);
 
   const SCREEN_HEIGHT = Dimensions.get('window').height;
   const animatedPosition = useSharedValue(SCREEN_HEIGHT);
+  const animatedIndex = useSharedValue(-1);
   const bottomSheetRef = useRef<any>(null);
 
   const activeFocusState = useSharedValue<{ selected: string | null; connected: Record<string, boolean> }>({
@@ -36,19 +39,14 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
     selectedNodeShared.value = selectedNode;
   }, [selectedNode, selectedNodeShared]);
 
-  useEffect(() => {
-    if (selectedNode || showActionMenu || showProvinceForm || showAlertsAndMessages) {
-      bottomSheetRef.current?.snapToIndex(0);
-    } else {
-      bottomSheetRef.current?.close();
-    }
-  }, [selectedNode, showActionMenu, showProvinceForm, showAlertsAndMessages]);
-
   const openActionMenu = useCallback(() => {
     setShowActionMenu(true);
     setShowProvinceForm(false);
     setShowAlertsAndMessages(false);
     setSelectedNode(null);
+    setIsNodeChatOpen(false);
+    setSheetSnapIndex(0);
+    bottomSheetRef.current?.snapToIndex(0);
   }, []);
 
   const openAlertsAndMessages = useCallback((target?: any) => {
@@ -57,26 +55,37 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
     setShowActionMenu(false);
     setShowProvinceForm(false);
     setSelectedNode(null);
+    setIsNodeChatOpen(false);
+    setSheetSnapIndex(0);
+    bottomSheetRef.current?.snapToIndex(0);
   }, []);
 
-  const clearSelectionState = useCallback(() => {
-    setSelectedNode(null);
-  }, []);
-
+  // FASE 1: Solo dispara la animación de cierre. NO modifica estado de React.
+  // Esto garantiza que el mode y los snapPoints permanezcan estables
+  // durante toda la animación de cierre del BottomSheet.
   const closePanels = useCallback(() => {
     bottomSheetRef.current?.close();
+  }, []);
+
+  // FASE 2: Limpieza de estado. Se ejecuta DESPUÉS de que la animación
+  // de cierre haya terminado, a través del callback nativo onClose del
+  // BottomSheet. En este punto el panel ya es invisible, así que cambiar
+  // mode/snapPoints no provoca saltos ni recálculos de posición.
+  const onPanelsClosed = useCallback(() => {
     setShowActionMenu(false);
     setShowProvinceForm(false);
     setShowAlertsAndMessages(false);
     setInitialChatTarget(null);
+    setIsNodeChatOpen(false);
+    setSelectedNode(null);
+    setSheetSnapIndex(-1);
     focusTransition.value = withTiming(0, { duration: 200 }, (finished) => {
       if (finished) {
         overlayClusterData.value = null;
         activeFocusState.value = { selected: null, connected: {} };
-        runOnJS(clearSelectionState)();
       }
     });
-  }, [activeFocusState, focusTransition, overlayClusterData, clearSelectionState]);
+  }, [activeFocusState, focusTransition, overlayClusterData]);
 
   const handleNodePress = useCallback(
     (node: MapNode) => {
@@ -97,9 +106,12 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
         focusTransition.value = withTiming(1, { duration: 250 });
 
         setSelectedNode(node);
+        setIsNodeChatOpen(false);
+        setSheetSnapIndex(0);
         setShowActionMenu(false);
         setShowProvinceForm(false);
         setShowAlertsAndMessages(false);
+        bottomSheetRef.current?.snapToIndex(0);
       }
     },
     [selectedNode, nodes, links, fontBold, activeFocusState, focusTransition, overlayClusterData, closePanels]
@@ -121,13 +133,19 @@ export function useCanvasUIState({ nodes, links, fontBold }: UseCanvasUIStatePro
     setCurrentLOD,
     selectedNode,
     setSelectedNode,
+    isNodeChatOpen,
+    setIsNodeChatOpen,
+    sheetSnapIndex,
+    setSheetSnapIndex,
     animatedPosition,
+    animatedIndex,
     bottomSheetRef,
     activeFocusState,
     focusTransition,
     overlayClusterData,
     openActionMenu,
     closePanels,
+    onPanelsClosed,
     handleNodePress,
   };
 }

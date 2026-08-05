@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Platform, Text, Pressable, Alert } from 'react-native';
 import { Canvas, Group, useFont } from '@shopify/react-native-skia';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -25,11 +25,12 @@ import { ContextualBottomSheet } from './ContextualBottomSheet';
 import { CitizenProfileContent } from './CitizenProfileContent';
 import { ActionMenuContent } from './ActionMenuContent';
 import { CreateProvinceForm } from './CreateProvinceForm';
-import { ProvinceChatUI } from './ProvinceChatUI';
+import { ProvinceInfoContent } from './ProvinceInfoContent';
 import { CauseInfoContent } from './CauseInfoContent';
 import { AlertsAndMessagesContent } from './AlertsAndMessagesContent';
+import { ChatRoomView } from './ChatRoomView';
 import { CivicAlertService } from '../../application/services/CivicAlertService';
-import { messagingService } from '../../application/services/MessagingService';
+import { messagingService, ConversationItem } from '../../application/services/MessagingService';
 import { MessageReadTracker } from '../../application/services/MessageReadTracker';
 
 const { width, height } = Dimensions.get('window');
@@ -127,7 +128,7 @@ export const CanvasMap = () => {
     if (!activeIdentity?.nsec || !activeIdentity?.npub) return;
 
     let isMounted = true;
-    let unsubscribe = () => {};
+    let unsubscribe = () => { };
     const processedMsgIds = new Set<string>();
 
     const setup = async () => {
@@ -326,21 +327,61 @@ export const CanvasMap = () => {
     setCurrentLOD,
     selectedNode,
     setSelectedNode,
+    isNodeChatOpen,
+    setIsNodeChatOpen,
+    sheetSnapIndex,
+    setSheetSnapIndex,
     animatedPosition,
+    animatedIndex,
     bottomSheetRef,
     focusTransition,
     overlayClusterData,
     openActionMenu,
     closePanels,
+    onPanelsClosed,
     handleNodePress,
   } = useCanvasUIState({ nodes, links, fontBold });
+
+  // 4. Memoized Active Chat for Selected Node
+  const nodeActiveChat = useMemo<ConversationItem | null>(() => {
+    if (!selectedNode) return null;
+    if (selectedNode.level >= 0) {
+      return {
+        type: 'DIRECT',
+        id: selectedNode.id,
+        title: selectedNode.localName || selectedNode.alias,
+        subtitle: 'Canal Cifrado E2EE',
+        avatarIcon: '👤',
+        targetNpub: selectedNode.npub,
+      };
+    }
+    if (selectedNode.level === -1) {
+      return {
+        type: 'PROVINCE',
+        id: selectedNode.id,
+        title: selectedNode.alias,
+        subtitle: 'Asamblea Provincial Soberana',
+        avatarIcon: '🏛️',
+        provinceId: selectedNode.id,
+      };
+    }
+    return {
+      type: 'CAUSE',
+      id: selectedNode.id,
+      title: selectedNode.alias,
+      subtitle: 'Foro Federal de Causa',
+      avatarIcon: '🌐',
+      causeId: selectedNode.id,
+    };
+  }, [selectedNode?.id, selectedNode?.alias, selectedNode?.localName, selectedNode?.npub, selectedNode?.level]);
 
   // 5. Gestures
   const { composed, globalTransform, scale, translateX, translateY, goToLOD, scales } = useCanvasGestures({
     bounds,
     nodes,
     handleNodePress,
-    closePanels
+    closePanels,
+    animatedPosition,
   });
 
   const animMode = useDerivedValue(() => {
@@ -365,8 +406,8 @@ export const CanvasMap = () => {
     const bgColor = interpolateColor(
       animMode.value,
       [1, 2, 3],
-      ['#020617', '#0f172a', '#1e293b']
-    ) as string;
+      ['#030712', '#020617', '#0f172a']
+    );
     return { backgroundColor: bgColor };
   });
 
@@ -388,6 +429,30 @@ export const CanvasMap = () => {
     return {
       transform: [{ translateY }]
     };
+  });
+
+  // Estilo animado para la Ficha de Información (Índice 0: 35% - Transición continua pura por GPU)
+  const infoCardAnimatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      animatedIndex.value,
+      [0, 0.4, 0.7, 1],
+      [1, 0.8, 0, 0],
+      Extrapolation.CLAMP
+    );
+    const zIndex = animatedIndex.value < 0.5 ? 10 : 1;
+    return { opacity, zIndex };
+  });
+
+  // Estilo animado para la Sala de Chat (Índice 1: 90% - Transición continua pura por GPU)
+  const chatRoomAnimatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      animatedIndex.value,
+      [0, 0.3, 0.6, 1],
+      [0, 0, 1, 1],
+      Extrapolation.CLAMP
+    );
+    const zIndex = animatedIndex.value >= 0.5 ? 10 : 1;
+    return { opacity, zIndex };
   });
 
   const CENTER = React.useMemo(() => ({ x: width / 2, y: height / 2 }), []);
@@ -470,7 +535,18 @@ export const CanvasMap = () => {
           <ContextualBottomSheet
             ref={bottomSheetRef}
             animatedPosition={animatedPosition}
-            onClose={closePanels}
+            animatedIndex={animatedIndex}
+            onChange={(index) => {
+              setSheetSnapIndex((prev) => (prev !== index ? index : prev));
+              if (index === 0) {
+                // Al bajar el panel al modo compacto (35%), volver a la ficha de información
+                setIsNodeChatOpen(false);
+              } else if (index === 1 && selectedNode) {
+                // Al subir el panel a pantalla completa (90%), abrir la sala de chat
+                setIsNodeChatOpen(true);
+              }
+            }}
+            onClose={onPanelsClosed}
             mode={
               showAlertsAndMessages ? 'alertsAndMessages' :
                 showProvinceForm ? 'provinceForm' :
@@ -489,82 +565,110 @@ export const CanvasMap = () => {
                 onAlertsCleared={() => setHasUnreadAlerts(false)}
               />
             )}
-            {!showAlertsAndMessages && selectedNode && selectedNode.level >= 0 && (
-              <CitizenProfileContent
-                citizen={selectedNode}
-                onClose={closePanels}
-                onViewProfile={() => { }}
-                onOpenChat={() => {
-                  if (selectedNode.npub) markTargetAsRead(selectedNode.npub);
-                  markTargetAsRead(selectedNode.id);
-                  openAlertsAndMessages({
-                    type: 'DIRECT',
-                    id: selectedNode.id,
-                    title: selectedNode.localName || selectedNode.alias,
-                    targetNpub: selectedNode.npub,
-                  });
-                }}
-                onUpdateLocalName={(newName) => {
-                  setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
-                  setSelectedNode({ ...selectedNode, localName: newName });
-                }}
-                onRevokeVisa={async () => {
-                  try {
-                    const targetNpub = await citizenRepository.revokeVisa(selectedNode.id, activeIdentity?.npub);
-                    if (targetNpub) {
-                      if (activeIdentity?.npub) {
-                        MessageReadTracker.markAsRead(activeIdentity.npub, targetNpub, Date.now());
-                        setUnreadMessagesMap((prev) => {
-                          const next = { ...prev };
-                          delete next[targetNpub];
-                          delete next[selectedNode.id];
-                          return next;
-                        });
-                      }
 
-                      if (activeIdentity?.nsec) {
-                        const visaSync = new VisaSyncService();
-                        await visaSync.publishRevokeVisa(
-                          activeIdentity.nsec,
-                          activeIdentity.alias || 'Padrino',
-                          targetNpub
-                        );
+            {/* CONTENIDO UNIFICADO DE NODO (Transición continua por GPU con Cross-Fade) */}
+            {!showAlertsAndMessages && selectedNode && (
+              <View style={styles.nodeContainer}>
+                {/* CAPA 1: FICHA DE INFORMACIÓN (Visible al 35%) */}
+                <Animated.View
+                  style={[StyleSheet.absoluteFill, infoCardAnimatedStyle]}
+                >
+                  {selectedNode.level >= 0 && (
+                    <CitizenProfileContent
+                      citizen={selectedNode}
+                      onClose={closePanels}
+                      onViewProfile={() => { }}
+                      onOpenChat={() => {
+                        if (selectedNode.npub) markTargetAsRead(selectedNode.npub);
+                        markTargetAsRead(selectedNode.id);
+                        setIsNodeChatOpen(true);
+                        bottomSheetRef.current?.snapToIndex(1);
+                      }}
+                      onUpdateLocalName={(newName) => {
+                        setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, localName: newName } : n));
+                        setSelectedNode({ ...selectedNode, localName: newName });
+                      }}
+                      onRevokeVisa={async () => {
+                        try {
+                          const targetNpub = await citizenRepository.revokeVisa(selectedNode.id, activeIdentity?.npub);
+                          if (targetNpub) {
+                            if (activeIdentity?.npub) {
+                              MessageReadTracker.markAsRead(activeIdentity.npub, targetNpub, Date.now());
+                              setUnreadMessagesMap((prev) => {
+                                const next = { ...prev };
+                                delete next[targetNpub];
+                                delete next[selectedNode.id];
+                                return next;
+                              });
+                            }
 
-                        if (activeIdentity?.npub) {
-                          await CivicAlertService.addAlert(activeIdentity.npub, {
-                            type: 'VISA_REVOKED',
-                            title: 'Has revocado una Visa',
-                            description: `Has revocado la visa al ciudadano ${selectedNode.localName || selectedNode.alias}. El enlace bilateral ha sido disuelto.`,
-                            relatedNpub: targetNpub,
-                            relatedAlias: selectedNode.alias,
-                          });
-                          setHasUnreadAlerts(true);
+                            if (activeIdentity?.nsec) {
+                              const visaSync = new VisaSyncService();
+                              await visaSync.publishRevokeVisa(
+                                activeIdentity.nsec,
+                                activeIdentity.alias || 'Padrino',
+                                targetNpub
+                              );
+
+                              if (activeIdentity?.npub) {
+                                await CivicAlertService.addAlert(activeIdentity.npub, {
+                                  type: 'VISA_REVOKED',
+                                  title: 'Has revocado una Visa',
+                                  description: `Has revocado la visa al ciudadano ${selectedNode.localName || selectedNode.alias}. El enlace bilateral ha sido disuelto.`,
+                                  relatedNpub: targetNpub,
+                                  relatedAlias: selectedNode.alias,
+                                });
+                                setHasUnreadAlerts(true);
+                              }
+                            }
+                          }
+                          closePanels();
+                          await fetchTopology();
+                        } catch (e) {
+                          console.error("Error revocando visa en canvas:", e);
                         }
-                      }
-                    }
-                    closePanels();
-                    await fetchTopology();
-                  } catch (e) {
-                    console.error("Error revocando visa en canvas:", e);
-                  }
-                }}
-              />
-            )}
-            {!showAlertsAndMessages && selectedNode && selectedNode.level === -1 && (
-              <ProvinceChatUI provinceId={selectedNode.id} provinceName={selectedNode.alias} />
-            )}
-            {!showAlertsAndMessages && selectedNode && selectedNode.level === -2 && (
-              <CauseInfoContent
-                causeNode={selectedNode}
-                onOpenChat={() => {
-                  markTargetAsRead(selectedNode.id);
-                  openAlertsAndMessages({
-                    type: 'CAUSE',
-                    id: selectedNode.id,
-                    title: selectedNode.alias,
-                  });
-                }}
-              />
+                      }}
+                    />
+                  )}
+                  {selectedNode.level === -1 && (
+                    <ProvinceInfoContent
+                      provinceNode={selectedNode}
+                      onOpenChat={() => {
+                        markTargetAsRead(selectedNode.id);
+                        setIsNodeChatOpen(true);
+                        bottomSheetRef.current?.snapToIndex(1);
+                      }}
+                    />
+                  )}
+                  {selectedNode.level === -2 && (
+                    <CauseInfoContent
+                      causeNode={selectedNode}
+                      onOpenChat={() => {
+                        markTargetAsRead(selectedNode.id);
+                        setIsNodeChatOpen(true);
+                        bottomSheetRef.current?.snapToIndex(1);
+                      }}
+                    />
+                  )}
+                </Animated.View>
+
+                {/* CAPA 2: SALA DE CHAT (Visible al 90%) */}
+                {nodeActiveChat && (
+                  <Animated.View
+                    style={[StyleSheet.absoluteFill, chatRoomAnimatedStyle]}
+                  >
+                    <ChatRoomView
+                      activeChat={nodeActiveChat}
+                      onBack={() => {
+                        setIsNodeChatOpen(false);
+                        bottomSheetRef.current?.snapToIndex(0);
+                      }}
+                      onClose={closePanels}
+                      onMarkAsRead={markTargetAsRead}
+                    />
+                  </Animated.View>
+                )}
+              </View>
             )}
             {!showAlertsAndMessages && showActionMenu && (
               <ActionMenuContent
@@ -647,5 +751,9 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     backgroundColor: '#000000',
-  }
+  },
+  nodeContainer: {
+    flex: 1,
+    width: '100%',
+  },
 });

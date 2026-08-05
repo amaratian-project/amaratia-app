@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { useDependencies } from '../../application/context/DependencyContext';
 import { useAuth } from '../../application/context/AuthContext';
 
@@ -37,11 +36,11 @@ export const CreateProvinceForm = ({ onClose, onSuccess }: CreateProvinceFormPro
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>Fundar Provincia</Text>
       <Text style={styles.subtitle}>Crea una nueva organización multifirma (Modo Fase 1)</Text>
 
-      <BottomSheetTextInput
+      <TextInput
         style={styles.input}
         placeholder="Nombre de la Provincia"
         placeholderTextColor="#64748b"
@@ -49,7 +48,7 @@ export const CreateProvinceForm = ({ onClose, onSuccess }: CreateProvinceFormPro
         onChangeText={setName}
       />
 
-      <BottomSheetTextInput
+      <TextInput
         style={[styles.input, styles.textArea]}
         placeholder="Propósito / Descripción (Opcional)"
         placeholderTextColor="#64748b"
@@ -74,7 +73,7 @@ export const CreateProvinceForm = ({ onClose, onSuccess }: CreateProvinceFormPro
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 

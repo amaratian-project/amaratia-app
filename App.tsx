@@ -1,6 +1,6 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Platform } from 'react-native';
+import { StyleSheet, Keyboard, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
@@ -26,6 +26,7 @@ const darkTheme = {
 
 export default function App() {
   const [isReady, setIsReady] = React.useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = React.useState(false);
 
   React.useEffect(() => {
     const init = async () => {
@@ -35,12 +36,30 @@ export default function App() {
     init();
   }, []);
 
+  React.useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'android' ? 'keyboardDidShow' : 'keyboardWillShow',
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'android' ? 'keyboardDidHide' : 'keyboardWillHide',
+      () => setIsKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   if (!isReady) return null;
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <SafeAreaView style={{ flex: 1 }} edges={['bottom', 'left', 'right']}>
+        <SafeAreaView
+          style={{ flex: 1 }}
+          edges={isKeyboardVisible ? ['left', 'right'] : ['bottom', 'left', 'right']}
+        >
           <StatusBar style="light" />
           <AuthProvider>
             <DependencyProvider dependencies={dependencies}>

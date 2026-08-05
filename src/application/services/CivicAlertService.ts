@@ -54,6 +54,15 @@ export class CivicAlertService {
     }
   }
 
+  static async hasUnreadAlerts(myNpub: string): Promise<boolean> {
+    try {
+      const current = await this.getAlerts(myNpub);
+      return current.some((a) => !a.read);
+    } catch {
+      return false;
+    }
+  }
+
   static async markAllAsRead(myNpub: string): Promise<void> {
     try {
       const current = await this.getAlerts(myNpub);

@@ -6,27 +6,19 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
-  Dimensions,
+  ScrollView,
 } from 'react-native';
-import {
-  BottomSheetFlatList,
-  BottomSheetTextInput,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
 import { CivicAlert, CivicAlertService } from '../../application/services/CivicAlertService';
 import {
-  ChatMessage,
   ConversationItem,
   ConversationType,
-  messagingService,
 } from '../../application/services/MessagingService';
 import { useAuth } from '../../application/context/AuthContext';
 import { useDependencies } from '../../application/context/DependencyContext';
 import { MessageReadTracker } from '../../application/services/MessageReadTracker';
+import { ChatRoomView } from './ChatRoomView';
 
-const { width } = Dimensions.get('window');
-
-type AlertsAndMessagesContentProps = {
+export interface AlertsAndMessagesContentProps {
   onClose: () => void;
   initialTarget?: {
     type: ConversationType;
@@ -38,7 +30,7 @@ type AlertsAndMessagesContentProps = {
   onMarkAsRead?: (targetId: string) => void;
   onMarkAllAsRead?: () => void;
   onAlertsCleared?: () => void;
-};
+}
 
 export const AlertsAndMessagesContent = ({
   onClose,
@@ -81,27 +73,6 @@ export const AlertsAndMessagesContent = ({
       : null
   );
 
-  // Chat State
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [isSending, setIsSending] = useState(false);
-
-  useEffect(() => {
-    if (activeChat && onMarkAsRead) {
-      if (activeChat.targetNpub) onMarkAsRead(activeChat.targetNpub);
-      if (activeChat.provinceId) onMarkAsRead(activeChat.provinceId);
-      if (activeChat.causeId) onMarkAsRead(activeChat.causeId);
-      onMarkAsRead(activeChat.id);
-      if (identity?.npub) {
-        MessageReadTracker.markAsRead(
-          identity.npub,
-          activeChat.targetNpub || activeChat.provinceId || activeChat.causeId || activeChat.id,
-          Date.now()
-        );
-      }
-    }
-  }, [activeChat, onMarkAsRead, identity?.npub]);
-
   // 1. Cargar Alertas Cívicas
   const loadAlerts = useCallback(async () => {
     if (!identity?.npub) return;
@@ -111,7 +82,7 @@ export const AlertsAndMessagesContent = ({
       setAlerts(data);
       await CivicAlertService.markAllAsRead(identity.npub);
     } catch (e) {
-      console.error('Error cargando alertas cívicas:', e);
+      console.error('[AlertsAndMessagesContent] Error cargando alertas cívicas:', e);
     } finally {
       setLoadingAlerts(false);
     }
@@ -121,14 +92,14 @@ export const AlertsAndMessagesContent = ({
     loadAlerts();
   }, [loadAlerts]);
 
-  // 2. Cargar Conversaciones Disponibles
+  // 2. Cargar Conversaciones Disponibles (Grafo e Historial Persistente)
   const loadConversations = useCallback(async () => {
     if (!identity?.npub) return;
     try {
       const topology = await citizenRepository.getHydratedCitizens(identity.npub);
       const items: ConversationItem[] = [];
 
-      // A. Contactos en el Grafo (Nivel 1, 2, 3)
+      // A. Contactos en el Grafo Activo (Nivel 1, 2, 3)
       const networkNpubSet = new Set<string>();
       topology.citizens
         .filter((c) => c.level >= 1 && c.networkData.npub && c.networkData.npub !== identity.npub)
@@ -218,7 +189,7 @@ export const AlertsAndMessagesContent = ({
 
       setConversations(items);
     } catch (e) {
-      console.error('Error cargando conversaciones:', e);
+      console.error('[AlertsAndMessagesContent] Error cargando conversaciones:', e);
     }
   }, [citizenRepository, identity?.npub, unreadMessagesMap]);
 
@@ -231,76 +202,6 @@ export const AlertsAndMessagesContent = ({
       await MessageReadTracker.markAllAsRead(identity.npub);
     }
     onMarkAllAsRead?.();
-  };
-
-  // 3. Suscripción a Mensajes del Chat Activo
-  useEffect(() => {
-    if (!activeChat || !identity?.nsec) return;
-
-    setChatMessages([]);
-    let unsubscribe: () => void = () => {};
-
-    if (activeChat.type === 'DIRECT' && activeChat.targetNpub) {
-      unsubscribe = messagingService.subscribeToDirectChat(
-        identity.nsec,
-        activeChat.targetNpub,
-        (msg) => {
-          setChatMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [msg, ...prev].sort((a, b) => b.timestamp - a.timestamp);
-          });
-        }
-      );
-    } else {
-      const channelId = activeChat.provinceId || activeChat.causeId || activeChat.id;
-      unsubscribe = messagingService.subscribeToChannel(
-        channelId,
-        identity.nsec,
-        (msg) => {
-          setChatMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [msg, ...prev].sort((a, b) => b.timestamp - a.timestamp);
-          });
-        }
-      );
-    }
-
-    return () => unsubscribe();
-  }, [activeChat, identity?.nsec]);
-
-  // 4. Enviar Mensaje
-  const handleSendMessage = async () => {
-    if (!inputText.trim() || !activeChat || !identity?.nsec || isSending) return;
-
-    const text = inputText.trim();
-    setInputText('');
-    setIsSending(true);
-
-    try {
-      if (activeChat.type === 'DIRECT' && activeChat.targetNpub) {
-        if (identity?.npub) {
-          MessageReadTracker.recordChat(identity.npub, activeChat.targetNpub);
-        }
-        await messagingService.sendDirectMessage(
-          identity.nsec,
-          activeChat.targetNpub,
-          identity.alias || 'Ciudadano',
-          text
-        );
-      } else {
-        const channelId = activeChat.provinceId || activeChat.causeId || activeChat.id;
-        await messagingService.sendChannelMessage(
-          channelId,
-          identity.nsec,
-          identity.alias || 'Ciudadano',
-          text
-        );
-      }
-    } catch (e) {
-      console.error('Error enviando mensaje:', e);
-    } finally {
-      setIsSending(false);
-    }
   };
 
   const handleClearAlerts = async () => {
@@ -344,7 +245,7 @@ export const AlertsAndMessagesContent = ({
     );
   };
 
-  // Conversaciones filtradas
+  // Conversaciones filtradas y categorizadas
   const networkConversations = useMemo(
     () => conversations.filter((c) => c.type === 'DIRECT' && !c.isUnlinked),
     [conversations]
@@ -420,20 +321,23 @@ export const AlertsAndMessagesContent = ({
 
   return (
     <View style={styles.container}>
-      {/* Cabecera Principal */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>COMUNICACIÓN & ALERTAS</Text>
-        <TouchableOpacity style={styles.closeHeaderBtn} onPress={onClose}>
-          <Text style={styles.closeHeaderBtnText}>✕</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Cabecera Principal (Solo cuando no hay chat activo) */}
+      {!activeChat && (
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>COMUNICACIÓN & ALERTAS</Text>
+          <TouchableOpacity style={styles.closeHeaderBtn} onPress={onClose} activeOpacity={0.7}>
+            <Text style={styles.closeHeaderBtnText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-      {/* Selector de Pestañas Superiores */}
+      {/* Selector de Pestañas Superiores (Alertas / Mensajes) */}
       {!activeChat && (
         <View style={styles.tabsRow}>
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'alerts' && styles.tabButtonActive]}
             onPress={() => setActiveTab('alerts')}
+            activeOpacity={0.7}
           >
             <Text
               style={[styles.tabButtonText, activeTab === 'alerts' && styles.tabButtonTextActive]}
@@ -445,6 +349,7 @@ export const AlertsAndMessagesContent = ({
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'messages' && styles.tabButtonActive]}
             onPress={() => setActiveTab('messages')}
+            activeOpacity={0.7}
           >
             <Text
               style={[styles.tabButtonText, activeTab === 'messages' && styles.tabButtonTextActive]}
@@ -461,7 +366,7 @@ export const AlertsAndMessagesContent = ({
           <View style={styles.subHeaderRow}>
             <Text style={styles.subHeaderTitle}>Bitácora de Eventos de Red</Text>
             {alerts.length > 0 && (
-              <TouchableOpacity onPress={handleClearAlerts}>
+              <TouchableOpacity onPress={handleClearAlerts} activeOpacity={0.7}>
                 <Text style={styles.clearBtnText}>Limpiar</Text>
               </TouchableOpacity>
             )}
@@ -478,7 +383,7 @@ export const AlertsAndMessagesContent = ({
               </Text>
             </View>
           ) : (
-            <BottomSheetFlatList
+            <FlatList
               data={alerts}
               keyExtractor={(item) => item.id}
               renderItem={renderAlertItem}
@@ -495,7 +400,7 @@ export const AlertsAndMessagesContent = ({
           <View style={styles.subHeaderRow}>
             <Text style={styles.subHeaderTitle}>Canales y Conversaciones Cívicas</Text>
             {Object.values(unreadMessagesMap || {}).some((c) => c > 0) && (
-              <TouchableOpacity onPress={handleMarkAllMessagesRead}>
+              <TouchableOpacity onPress={handleMarkAllMessagesRead} activeOpacity={0.7}>
                 <Text style={styles.clearBtnText}>Marcar leídos</Text>
               </TouchableOpacity>
             )}
@@ -506,6 +411,7 @@ export const AlertsAndMessagesContent = ({
             <TouchableOpacity
               style={[styles.filterChip, msgFilter === 'DIRECT' && styles.filterChipActive]}
               onPress={() => setMsgFilter('DIRECT')}
+              activeOpacity={0.7}
             >
               <Text
                 style={[
@@ -520,6 +426,7 @@ export const AlertsAndMessagesContent = ({
             <TouchableOpacity
               style={[styles.filterChip, msgFilter === 'PROVINCE' && styles.filterChipActive]}
               onPress={() => setMsgFilter('PROVINCE')}
+              activeOpacity={0.7}
             >
               <Text
                 style={[
@@ -534,6 +441,7 @@ export const AlertsAndMessagesContent = ({
             <TouchableOpacity
               style={[styles.filterChip, msgFilter === 'CAUSE' && styles.filterChipActive]}
               onPress={() => setMsgFilter('CAUSE')}
+              activeOpacity={0.7}
             >
               <Text
                 style={[
@@ -547,7 +455,7 @@ export const AlertsAndMessagesContent = ({
           </View>
 
           {msgFilter === 'DIRECT' ? (
-            <BottomSheetScrollView
+            <ScrollView
               contentContainerStyle={{ paddingBottom: 40 }}
               showsVerticalScrollIndicator={false}
             >
@@ -622,7 +530,7 @@ export const AlertsAndMessagesContent = ({
                   )}
                 </View>
               )}
-            </BottomSheetScrollView>
+            </ScrollView>
           ) : (
             filteredConversations.length === 0 ? (
               <View style={styles.emptyState}>
@@ -637,7 +545,7 @@ export const AlertsAndMessagesContent = ({
                 </Text>
               </View>
             ) : (
-              <BottomSheetFlatList
+              <FlatList
                 data={filteredConversations}
                 keyExtractor={(item) => item.id}
                 renderItem={renderConversationItem}
@@ -649,69 +557,14 @@ export const AlertsAndMessagesContent = ({
         </View>
       )}
 
-      {/* CONTENIDO CHAT ACTIVO (SALA DE CONVERSACIÓN) */}
+      {/* CONTENIDO CHAT ACTIVO (SALA DE CONVERSACIÓN REUTILIZABLE) */}
       {activeChat && (
-        <View style={{ flex: 1 }}>
-          {/* Header de la Sala de Chat */}
-          <View style={styles.chatHeader}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => setActiveChat(null)}>
-              <Text style={styles.backBtnText}>‹ Volver</Text>
-            </TouchableOpacity>
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.chatTitle} numberOfLines={1}>
-                {activeChat.title}
-              </Text>
-              <Text style={styles.chatSubtitle}>
-                {activeChat.type === 'DIRECT' ? '🔒 Cifrado E2EE • NIP-04' : '🏛️ Canal Comunitario'}
-              </Text>
-            </View>
-          </View>
-
-          {/* Mensajes */}
-          <BottomSheetFlatList
-            data={chatMessages}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View
-                style={[
-                  styles.msgBubble,
-                  item.isMe ? styles.msgMe : styles.msgOther,
-                ]}
-              >
-                {!item.isMe && <Text style={styles.msgSender}>{item.senderAlias}</Text>}
-                <Text style={styles.msgText}>{item.content}</Text>
-                <Text style={styles.msgTime}>
-                  {new Date(item.timestamp).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </View>
-            )}
-            inverted
-            contentContainerStyle={styles.chatListContent}
-            showsVerticalScrollIndicator={false}
-          />
-
-          {/* Input de Envío */}
-          <View style={styles.inputBar}>
-            <BottomSheetTextInput
-              style={styles.chatInput}
-              placeholder="Escribe un mensaje cifrado..."
-              placeholderTextColor="#64748b"
-              value={inputText}
-              onChangeText={setInputText}
-              onSubmitEditing={handleSendMessage}
-            />
-            <TouchableOpacity
-              style={[styles.sendBtn, isSending && { opacity: 0.5 }]}
-              onPress={handleSendMessage}
-              disabled={isSending}
-            >
-              <Text style={styles.sendBtnIcon}>➤</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <ChatRoomView
+          activeChat={activeChat}
+          onBack={() => setActiveChat(null)}
+          onClose={onClose}
+          onMarkAsRead={onMarkAsRead}
+        />
       )}
     </View>
   );
@@ -720,8 +573,6 @@ export const AlertsAndMessagesContent = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    height: '100%',
-    paddingBottom: 15,
   },
   header: {
     flexDirection: 'row',
@@ -971,104 +822,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
-  },
-  // Sala de Chat
-  chatHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#334155',
-    marginBottom: 10,
-  },
-  backBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: '#0f172a',
-  },
-  backBtnText: {
-    color: '#38bdf8',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  chatTitle: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  chatSubtitle: {
-    color: '#10b981',
-    fontSize: 10,
-    fontWeight: '700',
-    marginTop: 1,
-  },
-  chatListContent: {
-    flexGrow: 1,
-    paddingVertical: 10,
-  },
-  msgBubble: {
-    maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
-    marginVertical: 4,
-  },
-  msgMe: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#0284c7',
-    borderBottomRightRadius: 4,
-  },
-  msgOther: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#334155',
-    borderBottomLeftRadius: 4,
-  },
-  msgSender: {
-    fontSize: 11,
-    color: '#38bdf8',
-    fontWeight: 'bold',
-    marginBottom: 3,
-  },
-  msgText: {
-    color: '#f8fafc',
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  msgTime: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 9,
-    alignSelf: 'flex-end',
-    marginTop: 4,
-  },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#334155',
-  },
-  chatInput: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    color: '#f8fafc',
-    fontSize: 15,
-  },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#38bdf8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  sendBtnIcon: {
-    color: '#020617',
-    fontSize: 18,
-    marginLeft: 2,
   },
   avatarUnreadDot: {
     position: 'absolute',

@@ -82,7 +82,26 @@ function deriveChannelPrivKey(channelId: string): Uint8Array {
 }
 
 export class MessagingService {
+  // Caché de mensajes en memoria indexado por clave de conversación (npub o channelId)
+  private messagesCache = new Map<string, ChatMessage[]>();
+
   constructor(private adapter: IRelayClient = new NostrAdapter()) {}
+
+  getCachedMessages(chatKey: string): ChatMessage[] {
+    return this.messagesCache.get(chatKey) || [];
+  }
+
+  setCachedMessages(chatKey: string, msgs: ChatMessage[]): void {
+    this.messagesCache.set(chatKey, msgs);
+  }
+
+  appendCachedMessage(chatKey: string, msg: ChatMessage): void {
+    const current = this.messagesCache.get(chatKey) || [];
+    if (!current.some((m) => m.id === msg.id)) {
+      const updated = [msg, ...current].sort((a, b) => b.timestamp - a.timestamp);
+      this.messagesCache.set(chatKey, updated);
+    }
+  }
 
   /**
    * Suscribe a los mensajes directos (1 a 1) entre el usuario actual y otro ciudadano.
@@ -138,7 +157,7 @@ export class MessagingService {
             ? 'Yo'
             : (aliasTag && aliasTag[1]) || `Amarata-${senderNpub.substring(5, 9).toUpperCase()}`;
 
-          onMessage({
+          const chatMsg: ChatMessage = {
             id: event.id,
             senderPubkey: event.pubkey,
             senderNpub,
@@ -146,7 +165,10 @@ export class MessagingService {
             content: decryptedText,
             timestamp: event.created_at * 1000,
             isMe,
-          });
+          };
+
+          this.appendCachedMessage(otherNpub, chatMsg);
+          onMessage(chatMsg);
         } catch (err) {
           console.error('[MessagingService] Error procesando DM entrante:', err);
         }
@@ -195,7 +217,7 @@ export class MessagingService {
           const aliasTag = event.tags.find((t: string[]) => t[0] === 'alias');
           const senderAlias = (aliasTag && aliasTag[1]) || `Amarata-${senderNpub.substring(5, 9).toUpperCase()}`;
 
-          onIncomingMessage({
+          const incomingMsg: ChatMessage = {
             id: event.id,
             senderPubkey: event.pubkey,
             senderNpub,
@@ -203,7 +225,10 @@ export class MessagingService {
             content: decryptedText,
             timestamp: event.created_at * 1000,
             isMe: false,
-          });
+          };
+
+          this.appendCachedMessage(senderNpub, incomingMsg);
+          onIncomingMessage(incomingMsg);
         } catch (err) {
           console.error('[MessagingService] Error procesando DM global entrante:', err);
         }
@@ -245,7 +270,7 @@ export class MessagingService {
     const signedEvent = finalizeEvent(eventTemplate, myPrivKeyBytes);
     await this.adapter.publish(signedEvent as unknown as P2PEvent);
 
-    return {
+    const sentMsg: ChatMessage = {
       id: signedEvent.id,
       senderPubkey: myHexPubkey,
       senderNpub: nip19.npubEncode(myHexPubkey),
@@ -254,6 +279,9 @@ export class MessagingService {
       timestamp: Date.now(),
       isMe: true,
     };
+
+    this.appendCachedMessage(targetNpub, sentMsg);
+    return sentMsg;
   }
 
   /**
@@ -296,16 +324,19 @@ export class MessagingService {
           ? 'Yo'
           : (aliasTag && aliasTag[1]) || `Amarata-${senderNpub.substring(5, 9).toUpperCase()}`;
 
+        const channelMsg: ChatMessage = {
+          id: event.id,
+          senderPubkey: event.pubkey,
+          senderNpub,
+          senderAlias,
+          content,
+          timestamp: event.created_at * 1000,
+          isMe,
+        };
+
+        this.appendCachedMessage(channelId, channelMsg);
         if (onMessage) {
-          onMessage({
-            id: event.id,
-            senderPubkey: event.pubkey,
-            senderNpub,
-            senderAlias,
-            content,
-            timestamp: event.created_at * 1000,
-            isMe,
-          });
+          onMessage(channelMsg);
         }
       } catch (err) {
         console.warn('[MessagingService] Error en mensaje de canal:', err);
@@ -353,7 +384,7 @@ export class MessagingService {
 
     const myHexPub = getPublicKey(privKey);
 
-    return {
+    const sentMsg: ChatMessage = {
       id: signedEvent.id,
       senderPubkey: myHexPub,
       senderNpub: nip19.npubEncode(myHexPub),
@@ -362,6 +393,9 @@ export class MessagingService {
       timestamp: Date.now(),
       isMe: true,
     };
+
+    this.appendCachedMessage(channelId, sentMsg);
+    return sentMsg;
   }
 }
 
