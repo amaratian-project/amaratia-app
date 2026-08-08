@@ -8,6 +8,7 @@ import { database } from '../../../infrastructure/database';
 import { useAuth } from '../../../application/context/AuthContext';
 import { NostrAdapter } from '../../../infrastructure/network/NostrAdapter';
 import { finalizeEvent } from 'nostr-tools';
+import { ScreenContainer } from '../../components/ScreenContainer';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PinSetup'>;
@@ -119,86 +120,88 @@ export const PinSetupScreen = ({ navigation, route }: Props) => {
   };
 
   return (
-    <View className="flex-1 bg-slate-950 px-6 pt-20 pb-10">
-      <View className="flex-1 items-center">
-        <View className="w-16 h-16 bg-sky-500/20 rounded-full justify-center items-center mb-6">
-          <Text className="text-3xl">🔒</Text>
-        </View>
-        
-        <Text className="text-3xl font-bold text-white mb-2 text-center">
-          Asegura tu Acceso
-        </Text>
-        <Text className="text-slate-400 text-center mb-12">
-          Crea un PIN de 6 dígitos. Este PIN cifrará criptográficamente tus llaves en este dispositivo.
-        </Text>
-
-        {/* Círculos indicadores del PIN */}
-        <View className="flex-row gap-x-4 mb-16">
-          {[0, 1, 2, 3, 4, 5].map((index) => (
-            <View 
-              key={index} 
-              className={`w-5 h-5 rounded-full border-2 ${
-                index < pin.length 
-                  ? 'bg-sky-500 border-sky-500 shadow-sm shadow-sky-500/50' 
-                  : 'bg-transparent border-slate-700'
-              }`}
-            />
-          ))}
-        </View>
-
-        {isEncrypting ? (
-          <View className="items-center mt-10">
-            <ActivityIndicator size="large" color="#38bdf8" />
-            <Text className="text-sky-400 mt-4 font-medium animate-pulse">
-              Aplicando 100,000 iteraciones PBKDF2...
-            </Text>
+    <ScreenContainer backgroundColor="#020617">
+      <View className="flex-1 px-6 pt-10 pb-4">
+        <View className="flex-1 items-center">
+          <View className="w-16 h-16 bg-sky-500/20 rounded-full justify-center items-center mb-6">
+            <Text className="text-3xl">🔒</Text>
           </View>
-        ) : (
-          <View className="w-full max-w-xs mt-auto">
-            {/* Teclado numérico */}
-            <View className="flex-row flex-wrap justify-between gap-y-6">
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
+          
+          <Text className="text-3xl font-bold text-white mb-2 text-center">
+            Asegura tu Acceso
+          </Text>
+          <Text className="text-slate-400 text-center mb-12">
+            Crea un PIN de 6 dígitos. Este PIN cifrará criptográficamente tus llaves en este dispositivo.
+          </Text>
+
+          {/* Círculos indicadores del PIN */}
+          <View className="flex-row gap-x-4 mb-16">
+            {[0, 1, 2, 3, 4, 5].map((index) => (
+              <View 
+                key={index} 
+                className={`w-5 h-5 rounded-full border-2 ${
+                  index < pin.length 
+                    ? 'bg-sky-500 border-sky-500 shadow-sm shadow-sky-500/50' 
+                    : 'bg-transparent border-slate-700'
+                }`}
+              />
+            ))}
+          </View>
+
+          {isEncrypting ? (
+            <View className="items-center mt-10">
+              <ActivityIndicator size="large" color="#38bdf8" />
+              <Text className="text-sky-400 mt-4 font-medium animate-pulse">
+                Aplicando 100,000 iteraciones PBKDF2...
+              </Text>
+            </View>
+          ) : (
+            <View className="w-full max-w-xs mt-auto">
+              {/* Teclado numérico */}
+              <View className="flex-row flex-wrap justify-between gap-y-6">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
+                  <TouchableOpacity 
+                    key={num}
+                    onPress={() => handleKeyPress(num)}
+                    className="w-[30%] aspect-square rounded-full bg-slate-800/50 justify-center items-center active:bg-slate-700 border border-slate-700/50"
+                  >
+                    <Text className="text-3xl text-white font-medium">{num}</Text>
+                  </TouchableOpacity>
+                ))}
+                
+                <View className="w-[30%] aspect-square" />
+                
                 <TouchableOpacity 
-                  key={num}
-                  onPress={() => handleKeyPress(num)}
+                  onPress={() => handleKeyPress('0')}
                   className="w-[30%] aspect-square rounded-full bg-slate-800/50 justify-center items-center active:bg-slate-700 border border-slate-700/50"
                 >
-                  <Text className="text-3xl text-white font-medium">{num}</Text>
+                  <Text className="text-3xl text-white font-medium">0</Text>
                 </TouchableOpacity>
-              ))}
-              
-              <View className="w-[30%] aspect-square" />
-              
-              <TouchableOpacity 
-                onPress={() => handleKeyPress('0')}
-                className="w-[30%] aspect-square rounded-full bg-slate-800/50 justify-center items-center active:bg-slate-700 border border-slate-700/50"
-              >
-                <Text className="text-3xl text-white font-medium">0</Text>
-              </TouchableOpacity>
 
+                <TouchableOpacity 
+                  onPress={handleDelete}
+                  className="w-[30%] aspect-square rounded-full justify-center items-center active:bg-slate-800/50"
+                >
+                  <Text className="text-xl text-slate-400 font-bold">BORRAR</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Botón de Confirmar */}
               <TouchableOpacity 
-                onPress={handleDelete}
-                className="w-[30%] aspect-square rounded-full justify-center items-center active:bg-slate-800/50"
+                className={`w-full py-4 rounded-2xl mt-10 shadow-lg ${
+                  pin.length === 6 ? 'bg-sky-500 active:bg-sky-400 shadow-sky-500/30' : 'bg-slate-800 opacity-50'
+                }`}
+                disabled={pin.length !== 6}
+                onPress={handleConfirm}
               >
-                <Text className="text-xl text-slate-400 font-bold">BORRAR</Text>
+                <Text className="text-white text-center font-bold text-lg">
+                  Proteger Identidad
+                </Text>
               </TouchableOpacity>
             </View>
-
-            {/* Botón de Confirmar */}
-            <TouchableOpacity 
-              className={`w-full py-4 rounded-2xl mt-10 shadow-lg ${
-                pin.length === 6 ? 'bg-sky-500 active:bg-sky-400 shadow-sky-500/30' : 'bg-slate-800 opacity-50'
-              }`}
-              disabled={pin.length !== 6}
-              onPress={handleConfirm}
-            >
-              <Text className="text-white text-center font-bold text-lg">
-                Proteger Identidad
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
       </View>
-    </View>
+    </ScreenContainer>
   );
 };

@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, P
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 import { IdentityUseCase } from '../../../application/use-cases/IdentityUseCase';
+import { ScreenContainer } from '../../components/ScreenContainer';
 import * as bip39 from '@scure/bip39';
 // @ts-ignore: module resolution for wordlist
 import { wordlist } from '@scure/bip39/wordlists/english';
@@ -53,12 +54,13 @@ export const IdentityRestoreScreen = ({ navigation }: Props) => {
   const isFormComplete = words.filter(w => w.trim().length > 0).length === 12;
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-slate-950"
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        <View className="flex-1 px-6 pt-16 pb-10">
+    <ScreenContainer backgroundColor="#020617">
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1"
+      >
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+          <View className="flex-1 px-6 pt-6 pb-6">
           <View className="w-16 h-16 bg-sky-500/20 rounded-full justify-center items-center mb-6 border border-sky-500/30">
             <Text className="text-3xl">🔄</Text>
           </View>
@@ -125,8 +127,9 @@ export const IdentityRestoreScreen = ({ navigation }: Props) => {
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </ScreenContainer>
   );
 };

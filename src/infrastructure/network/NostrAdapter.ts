@@ -70,11 +70,16 @@ export class NostrAdapter implements IRelayClient {
     if (this.activeRelays.size === 0) throw new Error('No relays connected in pool');
 
     const relaysArray = Array.from(this.activeRelays);
+    const seenEventIds = new Set<string>();
     
     // nostr-tools v2 subscribeMany toma un solo filtro por llamada, iteramos:
     const subs = filters.map(filter => 
       this.pool.subscribeMany(relaysArray, filter, {
         onevent(event: any) {
+          if (event?.id) {
+            if (seenEventIds.has(event.id)) return;
+            seenEventIds.add(event.id);
+          }
           onEvent(event as unknown as P2PEvent);
         },
         oneose() {

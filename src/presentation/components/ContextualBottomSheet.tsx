@@ -1,7 +1,15 @@
 import React, { forwardRef, useMemo } from 'react';
-import { View, StyleSheet, Keyboard } from 'react-native';
-import BottomSheet, { useBottomSheetSpringConfigs } from '@gorhom/bottom-sheet';
-import { SharedValue } from 'react-native-reanimated';
+import { StyleSheet, Keyboard } from 'react-native';
+import BottomSheet, { useBottomSheetTimingConfigs } from '@gorhom/bottom-sheet';
+import Animated, {
+  Easing,
+  SharedValue,
+  useAnimatedKeyboard,
+  useAnimatedStyle,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type ContextualBottomSheetProps = {
   children: React.ReactNode;
@@ -13,7 +21,7 @@ export type ContextualBottomSheetProps = {
 };
 
 const CustomBottomSheetBackground = React.memo(({ style }: any) => (
-  <View
+  <Animated.View
     pointerEvents="none"
     style={[
       style,
@@ -24,6 +32,9 @@ const CustomBottomSheetBackground = React.memo(({ style }: any) => (
 
 export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomSheetProps>(
   ({ children, onClose, onChange, animatedIndex, animatedPosition, mode = 'dynamic' }, ref) => {
+    const insets = useSafeAreaInsets();
+    const keyboard = useAnimatedKeyboard();
+
     const snapPoints = useMemo(() => {
       switch (mode) {
         case 'chat': return ['90%'];
@@ -37,12 +48,25 @@ export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomShe
       }
     }, [mode]);
 
-    // Resorte amortiguado de alta precisión con overshootClamping: CERO rebote físico
-    const animationConfigs = useBottomSheetSpringConfigs({
-      damping: 35,
-      mass: 1,
-      stiffness: 250,
-      overshootClamping: true,
+    // Animación de tiempo sobria de 250ms con Easing cúbico (cero rebotes)
+    const animationConfigs = useBottomSheetTimingConfigs({
+      duration: 250,
+      easing: Easing.out(Easing.cubic),
+    });
+
+    // Ajuste dinámico y fluido del margen inferior:
+    // Con teclado cerrado: respeta insets.bottom para separarse de la barra de navegación del teléfono.
+    // Con teclado abierto: se reduce a 0 suavemente para que la caja de texto quede pegada justo sobre el teclado.
+    const animatedContentContainerStyle = useAnimatedStyle(() => {
+      const paddingBottom = interpolate(
+        keyboard.height.value,
+        [0, 80],
+        [Math.max(8, insets.bottom), 0],
+        Extrapolation.CLAMP
+      );
+      return {
+        paddingBottom,
+      };
     });
 
     return (
@@ -51,19 +75,26 @@ export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomShe
         index={-1}
         snapPoints={snapPoints}
         animationConfigs={animationConfigs}
+        bottomInset={0}
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
         enableDynamicSizing={false}
         enablePanDownToClose={true}
         enableOverDrag={false}
-        // Cerrar el teclado automáticamente en cuanto el usuario toca o arrastra el panel
-        enableBlurKeyboardOnGesture={true}
+        overDragResistanceFactor={0}
+        // Desactivar el cierre automático del teclado al tocar cualquier área vacía
+        enableBlurKeyboardOnGesture={false}
         // El panel SOLO se mueve desde el handle de 48px.
         // El scroll del chat funciona porque el Gesture.Pan() del canvas
         // usa manualActivation y FALLA explícitamente para toques en el
         // área del BottomSheet, liberando el toque para el FlatList nativo.
         enableContentPanningGesture={false}
         enableHandlePanningGesture={true}
-        onAnimate={() => {
-          Keyboard.dismiss();
+        onAnimate={(fromIndex, toIndex) => {
+          // Solo descartar el teclado si el panel se está cerrando por completo (toIndex === -1)
+          if (toIndex === -1) {
+            Keyboard.dismiss();
+          }
         }}
         onChange={(index) => {
           // Solo notificar cambios de snap point que NO sean cierre.
@@ -80,15 +111,13 @@ export const ContextualBottomSheet = forwardRef<BottomSheet, ContextualBottomShe
         }}
         animatedIndex={animatedIndex}
         animatedPosition={animatedPosition}
-        keyboardBehavior="extend"
-        keyboardBlurBehavior="restore"
         handleStyle={styles.handleContainer}
         handleIndicatorStyle={styles.handleBar}
         backgroundComponent={CustomBottomSheetBackground}
       >
-        <View style={styles.contentContainer}>
+        <Animated.View style={[styles.contentContainer, animatedContentContainerStyle]}>
           {children}
-        </View>
+        </Animated.View>
       </BottomSheet>
     );
   }

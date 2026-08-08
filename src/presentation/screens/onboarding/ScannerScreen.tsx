@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { verifyEvent, nip19 } from 'nostr-tools';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
 
@@ -10,6 +11,7 @@ type Props = {
 };
 
 export const ScannerScreen = ({ navigation }: Props) => {
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
 
@@ -111,7 +113,7 @@ export const ScannerScreen = ({ navigation }: Props) => {
           barcodeTypes: ['qr'],
         }}
       />
-      <View className="absolute bottom-10 left-0 right-0 items-center">
+      <View style={{ position: 'absolute', bottom: insets.bottom + 20, left: 0, right: 0, alignItems: 'center' }}>
         <TouchableOpacity 
           className="bg-slate-900/80 px-8 py-4 rounded-full border border-slate-700"
           onPress={() => navigation.goBack()}
@@ -119,7 +121,7 @@ export const ScannerScreen = ({ navigation }: Props) => {
           <Text className="text-white font-bold text-lg">Cancelar Escaneo</Text>
         </TouchableOpacity>
       </View>
-      <View className="absolute top-20 left-0 right-0 items-center">
+      <View style={{ position: 'absolute', top: insets.top + 20, left: 0, right: 0, alignItems: 'center' }}>
         <Text className="text-white font-medium text-lg bg-black/50 px-4 py-2 rounded-lg">Apunta al código QR del ciudadano</Text>
       </View>
     </View>

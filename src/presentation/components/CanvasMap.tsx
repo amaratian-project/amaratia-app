@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { StyleSheet, View, Dimensions, ActivityIndicator, Vibration, Platform, Text, Pressable, Alert } from 'react-native';
 import { Canvas, Group, useFont } from '@shopify/react-native-skia';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -6,6 +6,7 @@ import { useSharedValue, useDerivedValue, useAnimatedReaction, runOnJS, withSpri
 import Animated from 'react-native-reanimated';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDependencies } from '../../application/context/DependencyContext';
 import { useAuth } from '../../application/context/AuthContext';
@@ -60,6 +61,7 @@ const LodSegmentButton = ({ item, animMode, onPress }: any) => {
 };
 
 export const CanvasMap = () => {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<any>>();
   const route = useRoute<any>();
   const fontNormal = useFont(require('../../../assets/Modelica-Regular.ttf'), 11);
@@ -166,9 +168,18 @@ export const CanvasMap = () => {
   }, [activeIdentity?.nsec, activeIdentity?.npub]);
 
   // Efecto 1: Otorgar Visa (Padrino -> Turista vía DB local + Nostr Relay)
+  const processedAddCitizenRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (route.params?.addCitizen) {
       const npubToAdd = route.params.addCitizen;
+      if (processedAddCitizenRef.current === npubToAdd) {
+        navigation.setParams({ addCitizen: undefined });
+        return;
+      }
+      processedAddCitizenRef.current = npubToAdd;
+      navigation.setParams({ addCitizen: undefined });
+
       const processAdd = async () => {
         try {
           // 1. Guardar localmente en SQLite
@@ -198,11 +209,19 @@ export const CanvasMap = () => {
       };
       processAdd();
     }
-  }, [route.params?.addCitizen, citizenRepository, fetchTopology, activeIdentity]);
+  }, [route.params?.addCitizen, citizenRepository, fetchTopology, activeIdentity, navigation]);
 
   // Efecto 2: Escuchar Eventos Cívicos entrantes (Visas y Revocaciones en 1º, 2º y 3er Grado)
   useEffect(() => {
     if (!activeIdentity?.npub) return;
+
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const scheduleFetchTopology = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchTopology();
+      }, 250);
+    };
 
     const visaSync = new VisaSyncService();
     const unsubscribe = visaSync.subscribeToCivicEvents(activeIdentity.npub, {
@@ -229,7 +248,7 @@ export const CanvasMap = () => {
                 `Has recibido una Visa cívica de ${sponsorAlias || `Amarata-${sponsorNpub.substring(5, 9).toUpperCase()}`}.\n\n¡Tu DNI ha sido promovido a Ciudadano de Amaratia y tu garante ha sido agregado a tu red!`,
                 [{ text: '¡Excelente!' }]
               );
-              await fetchTopology();
+              scheduleFetchTopology();
             }
           } else {
             // Evento de red (Descubrimiento dinámico de 2º y 3er Grado)
@@ -240,7 +259,7 @@ export const CanvasMap = () => {
               activeIdentity.npub
             );
             if (changed) {
-              await fetchTopology();
+              scheduleFetchTopology();
             }
           }
         } catch (err) {
@@ -274,11 +293,11 @@ export const CanvasMap = () => {
               });
               setHasUnreadAlerts(true);
               Alert.alert(
-                '⚠️ Actualización de Red Cívica',
+                '⚠️ Visa Cívica Revocada',
                 `El ciudadano ${revokerAlias || `Amarata-${revokerNpub.substring(5, 9).toUpperCase()}`} ha revocado su visa cívica.\n\nTu red de confianza y títulos cívicos han sido actualizados bilateralmente.`,
                 [{ text: 'Entendido' }]
               );
-              await fetchTopology();
+              scheduleFetchTopology();
             }
           } else {
             // Revocación en la red (2º o 3er Grado)
@@ -288,7 +307,7 @@ export const CanvasMap = () => {
               activeIdentity.npub
             );
             if (changed) {
-              await fetchTopology();
+              scheduleFetchTopology();
             }
           }
         } catch (err) {
@@ -298,6 +317,7 @@ export const CanvasMap = () => {
     });
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribe();
     };
   }, [activeIdentity?.npub, citizenRepository, fetchTopology]);
@@ -420,11 +440,12 @@ export const CanvasMap = () => {
       sheetHeight = Math.max(0, rawSheetHeight - PANEL_VISUAL_OFFSET);
     }
 
-    const maxUpload = SCREEN_HEIGHT * 0.5;
-    const elementTopFromBottom = Math.min(maxUpload, Math.max(100, sheetHeight));
+    // El dock mide 70px + padding 24px + insets.bottom + 12px de separación = insets.bottom + 106px
+    const dockTopOffset = insets.bottom + 106;
+    const maxUpload = SCREEN_HEIGHT * 0.6;
+    const elementTopFromBottom = Math.min(maxUpload, Math.max(dockTopOffset, sheetHeight));
 
-    const GAP = 5;
-    const translateY = -(elementTopFromBottom + GAP);
+    const translateY = -elementTopFromBottom;
 
     return {
       transform: [{ translateY }]
@@ -516,7 +537,7 @@ export const CanvasMap = () => {
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
 
           {/* El Dock se renderiza ANTES que el BottomSheet para que este último lo tape al subir */}
-          <View style={{ position: 'absolute', bottom: 0, width: '100%', alignItems: 'center', paddingBottom: 30, pointerEvents: 'box-none' }}>
+          <View style={{ position: 'absolute', bottom: insets.bottom, width: '100%', alignItems: 'center', paddingBottom: 24, pointerEvents: 'box-none' }}>
             <FloatingDock
               onAddPress={openActionMenu}
               onMessagePress={() => {
@@ -571,7 +592,8 @@ export const CanvasMap = () => {
               <View style={styles.nodeContainer}>
                 {/* CAPA 1: FICHA DE INFORMACIÓN (Visible al 35%) */}
                 <Animated.View
-                  style={[StyleSheet.absoluteFill, infoCardAnimatedStyle]}
+                  style={[styles.infoCardLayer, infoCardAnimatedStyle]}
+                  pointerEvents={sheetSnapIndex === 0 && !isNodeChatOpen ? 'auto' : 'none'}
                 >
                   {selectedNode.level >= 0 && (
                     <CitizenProfileContent
@@ -655,7 +677,8 @@ export const CanvasMap = () => {
                 {/* CAPA 2: SALA DE CHAT (Visible al 90%) */}
                 {nodeActiveChat && (
                   <Animated.View
-                    style={[StyleSheet.absoluteFill, chatRoomAnimatedStyle]}
+                    style={[styles.chatRoomLayer, chatRoomAnimatedStyle]}
+                    pointerEvents={sheetSnapIndex === 1 || isNodeChatOpen ? 'auto' : 'none'}
                   >
                     <ChatRoomView
                       activeChat={nodeActiveChat}
@@ -754,6 +777,22 @@ const styles = StyleSheet.create({
   },
   nodeContainer: {
     flex: 1,
+    width: '100%',
+  },
+  infoCardLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+  },
+  chatRoomLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: '100%',
   },
 });

@@ -97,22 +97,53 @@ export class VisaSyncService {
   }
 
   /**
-   * Se suscribe a los Relays de Nostr para escuchar eventos cívicos de la red.
+   * Se suscribe a los Relays de Nostr para escuchar eventos cívicos relevantes para la identidad activa.
    */
   subscribeToCivicEvents(
     myNpub: string,
-    handlers: CivicEventHandlers
+    handlers: CivicEventHandlers,
+    knownAuthorPubkeys?: string[]
   ): () => void {
     try {
-      const filters = [
+      let myHexPubkey = '';
+      try {
+        const decoded = nip19.decode(myNpub);
+        if (decoded.type === 'npub') {
+          myHexPubkey = decoded.data as string;
+        }
+      } catch (err) {
+        console.warn('[VisaSyncService] npub inválido al suscribir eventos cívicos:', err);
+      }
+
+      if (!myHexPubkey) {
+        return () => {};
+      }
+
+      const filters: any[] = [
         {
           kinds: [21001, 21002],
-        } as any,
+          '#p': [myHexPubkey],
+        },
       ];
+
+      if (knownAuthorPubkeys && knownAuthorPubkeys.length > 0) {
+        filters.push({
+          kinds: [21001, 21002],
+          authors: knownAuthorPubkeys,
+        });
+      }
+
+      const processedCivicEventIds = new Set<string>();
 
       return this.relayClient.subscribe(filters, async (event: P2PEvent) => {
         try {
-          const isValid = verifyEvent(event as any);
+          const rawEvent = event as any;
+          if (rawEvent?.id) {
+            if (processedCivicEventIds.has(rawEvent.id)) return;
+            processedCivicEventIds.add(rawEvent.id);
+          }
+
+          const isValid = verifyEvent(rawEvent);
           if (!isValid) {
             console.warn('[VisaSyncService] Evento cívico con firma inválida descartado');
             return;

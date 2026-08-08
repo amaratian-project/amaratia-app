@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,34 @@ export interface ChatRoomViewProps {
   onClose?: () => void;
   onMarkAsRead?: (targetId: string) => void;
   onMessageSent?: (msg: ChatMessage) => void;
+}
+
+type ChatListItem =
+  | { type: 'MESSAGE'; data: ChatMessage; id: string }
+  | { type: 'DATE_SEPARATOR'; dateLabel: string; id: string };
+
+function formatChatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const diffTime = today.getTime() - targetDay.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) {
+    return 'Hoy';
+  } else if (diffDays === 1) {
+    return 'Ayer';
+  } else if (diffDays > 1 && diffDays < 7) {
+    const dayName = date.toLocaleDateString('es-ES', { weekday: 'long' });
+    return dayName.charAt(0).toUpperCase() + dayName.slice(1);
+  } else if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+  } else {
+    return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
 }
 
 export const ChatRoomView = ({
@@ -46,18 +74,56 @@ export const ChatRoomView = ({
     onMessageSent,
   });
 
-  const renderMessageBubble = ({ item }: { item: ChatMessage }) => {
+  const listItems = useMemo<ChatListItem[]>(() => {
+    if (messages.length === 0) return [];
+
+    const items: ChatListItem[] = [];
+    for (let i = 0; i < messages.length; i++) {
+      const currentMsg = messages[i];
+      items.push({
+        type: 'MESSAGE',
+        data: currentMsg,
+        id: currentMsg.id,
+      });
+
+      const nextMsg = messages[i + 1];
+      const currentDateKey = new Date(currentMsg.timestamp).toDateString();
+      const nextDateKey = nextMsg ? new Date(nextMsg.timestamp).toDateString() : null;
+
+      if (!nextMsg || currentDateKey !== nextDateKey) {
+        items.push({
+          type: 'DATE_SEPARATOR',
+          dateLabel: formatChatDate(currentMsg.timestamp),
+          id: `date_sep_${currentDateKey}`,
+        });
+      }
+    }
+    return items;
+  }, [messages]);
+
+  const renderItem = ({ item }: { item: ChatListItem }) => {
+    if (item.type === 'DATE_SEPARATOR') {
+      return (
+        <View style={styles.dateSeparatorContainer}>
+          <View style={styles.dateSeparatorPill}>
+            <Text style={styles.dateSeparatorText}>{item.dateLabel}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    const msg = item.data;
     return (
       <View
         style={[
           styles.msgBubble,
-          item.isMe ? styles.msgMe : styles.msgOther,
+          msg.isMe ? styles.msgMe : styles.msgOther,
         ]}
       >
-        {!item.isMe && <Text style={styles.msgSender}>{item.senderAlias}</Text>}
-        <Text style={styles.msgText}>{item.content}</Text>
+        {!msg.isMe && <Text style={styles.msgSender}>{msg.senderAlias}</Text>}
+        <Text style={styles.msgText}>{msg.content}</Text>
         <Text style={styles.msgTime}>
-          {new Date(item.timestamp).toLocaleTimeString([], {
+          {new Date(msg.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
           })}
@@ -118,15 +184,15 @@ export const ChatRoomView = ({
           </View>
         ) : (
           <BottomSheetFlatList
-            data={messages}
+            data={listItems}
             keyExtractor={(item) => item.id}
-            renderItem={renderMessageBubble}
+            renderItem={renderItem}
             inverted
             style={styles.chatList}
             contentContainerStyle={styles.chatListContent}
             showsVerticalScrollIndicator={true}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="always"
+            keyboardDismissMode="none"
           />
         )}
       </View>
@@ -323,5 +389,30 @@ const styles = StyleSheet.create({
     color: '#020617',
     fontSize: 18,
     marginLeft: 2,
+  },
+  dateSeparatorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+    width: '100%',
+  },
+  dateSeparatorPill: {
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dateSeparatorText: {
+    color: '#94a3b8',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
